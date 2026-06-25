@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java Wallet — Architecture &amp; Usage</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#ffffff; --panel-2:#eef1f5; --border:#d0d7de;
+    --text:#1f2328; --muted:#59636e; --accent:#0969da; --accent-2:#1a7f37;
+    --warn:#9a6700; --danger:#cf222e; --purple:#8250df; --mono:#1f2328;
+    --code-bg:#f6f8fa;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,kbd,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .wrap{max-width:1040px; margin:0 auto; padding:0 24px}
+
+  /* Hero */
+  header.hero{
+    background:linear-gradient(135deg,#ddeaff 0%,#ffffff 58%);
+    border-bottom:1px solid var(--border); padding:54px 0 40px;
+  }
+  .hero h1{margin:0 0 6px; font-size:2.5rem; letter-spacing:-.5px}
+  .hero .sub{color:var(--muted); font-size:1.15rem; max-width:760px}
+  .badges{margin-top:20px; display:flex; flex-wrap:wrap; gap:8px}
+  .badge{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--mono);
+    padding:4px 11px; border-radius:999px; font-size:.8rem; font-family:"JetBrains Mono",monospace;
+  }
+  .pillars{display:flex; gap:14px; margin-top:26px; flex-wrap:wrap}
+  .pillar{
+    flex:1; min-width:210px; background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:16px 18px;
+  }
+  .pillar .n{font-size:.72rem; color:var(--accent); letter-spacing:1px; text-transform:uppercase}
+  .pillar h3{margin:6px 0 4px; font-size:1.05rem}
+  .pillar p{margin:0; color:var(--muted); font-size:.9rem}
+
+  /* Nav */
+  nav.toc{
+    position:sticky; top:0; z-index:20; backdrop-filter:blur(8px);
+    background:rgba(255,255,255,.85); border-bottom:1px solid var(--border);
+  }
+  nav.toc .wrap{display:flex; gap:6px; flex-wrap:wrap; padding:10px 24px}
+  nav.toc a{
+    color:var(--muted); font-size:.85rem; padding:5px 11px; border-radius:7px;
+  }
+  nav.toc a:hover{background:var(--panel-2); color:var(--text); text-decoration:none}
+
+  section{padding:46px 0 8px; border-bottom:1px solid var(--border)}
+  section:last-of-type{border-bottom:none}
+  h2{font-size:1.7rem; margin:0 0 6px; letter-spacing:-.3px; display:flex; align-items:center; gap:10px}
+  h2 .ico{
+    width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;
+    background:var(--panel-2);border:1px solid var(--border);font-size:1rem;
+  }
+  h3{font-size:1.18rem; margin:30px 0 10px}
+  .lead{color:var(--muted); margin:0 0 18px; max-width:820px}
+
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px 22px; margin:16px 0}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  pre{
+    background:var(--code-bg); border:1px solid var(--border); border-radius:10px;
+    padding:16px 18px; overflow:auto; font-size:.85rem; line-height:1.55; margin:14px 0;
+  }
+  p code,li code,td code{background:var(--panel-2); padding:1px 6px; border-radius:5px; font-size:.85em; color:#953800}
+  .tok-key{color:var(--purple)} .tok-str{color:var(--accent-2)} .tok-com{color:#6e7781; font-style:italic}
+  .tok-fn{color:var(--accent)} .tok-num{color:var(--warn)}
+
+  table{width:100%; border-collapse:collapse; margin:16px 0; font-size:.9rem}
+  th,td{border:1px solid var(--border); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:var(--panel-2); font-weight:600}
+  tr:nth-child(even) td{background:rgba(0,0,0,.025)}
+
+  .method{display:inline-block; font-family:"JetBrains Mono",monospace; font-size:.74rem; font-weight:700;
+    padding:2px 8px; border-radius:5px; margin-right:8px; vertical-align:middle}
+  .m-post{background:#dafbe1; color:#116329; border:1px solid #aee5bd}
+  .m-get{background:#ddf4ff; color:#0a558c; border:1px solid #b6e3ff}
+
+  .note{border-left:3px solid var(--accent); background:rgba(9,105,218,.06); padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0}
+  .note.warn{border-color:var(--warn); background:rgba(154,103,0,.08)}
+  .note.good{border-color:var(--accent-2); background:rgba(26,127,55,.07)}
+
+  ul.clean{list-style:none; padding:0}
+  ul.clean li{padding:7px 0 7px 28px; position:relative; border-bottom:1px solid rgba(0,0,0,.07)}
+  ul.clean li:before{content:"▸"; position:absolute; left:6px; color:var(--accent)}
+
+  .muted{color:var(--muted)}
+  footer{padding:34px 0 60px; color:var(--muted); font-size:.85rem}
+
+  /* diagram */
+  .diagram{background:var(--code-bg); border:1px solid var(--border); border-radius:12px; padding:22px; overflow:auto; margin:18px 0}
+  .layer{display:flex; align-items:stretch; gap:14px; margin:0 0 14px}
+  .layer-label{
+    writing-mode:vertical-rl; transform:rotate(180deg); text-align:center;
+    font-size:.7rem; letter-spacing:1px; text-transform:uppercase; color:var(--muted);
+    border:1px solid var(--border); border-radius:8px; padding:6px; background:var(--panel-2); min-width:34px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .layer-body{flex:1; display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+  .node{
+    background:var(--panel); border:1px solid var(--border); border-radius:9px; padding:10px 14px;
+    min-width:140px; flex:1;
+  }
+  .node .t{font-weight:600; font-size:.92rem}
+  .node .d{font-size:.76rem; color:var(--muted); margin-top:2px; font-family:"JetBrains Mono",monospace}
+  .node.accent{border-color:var(--accent)} .node.green{border-color:var(--accent-2)}
+  .node.purple{border-color:var(--purple)} .node.warn{border-color:var(--warn)}
+  .arrow{text-align:center; color:var(--muted); font-size:1.2rem; margin:-6px 0 8px}
+
+  .seq{counter-reset:step; padding:0; list-style:none; margin:18px 0}
+  .seq li{position:relative; padding:0 0 18px 46px; border-left:2px solid var(--border); margin-left:14px}
+  .seq li:last-child{border-left-color:transparent}
+  .seq li:before{
+    counter-increment:step; content:counter(step); position:absolute; left:-15px; top:-2px;
+    width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff;
+    font-weight:700; display:grid; place-items:center; font-size:.85rem;
+  }
+  .seq li b{color:var(--text)}
+  .kvs{font-size:.85rem}
+  .tag{font-size:.7rem; padding:1px 7px; border-radius:5px; border:1px solid var(--border); background:var(--panel-2); color:var(--muted); font-family:"JetBrains Mono",monospace}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>💰 Java Wallet</h1>
+    <p class="sub">A double-entry bookkeeping service that tracks account balances and money movements over a REST API — engineered so that <strong>an incorrect balance can never be observed</strong>, even under heavy concurrency or across a cluster of nodes.</p>
+    <div class="badges">
+      <span class="badge">Java 17</span>
+      <span class="badge">Spring Boot 3.2.5</span>
+      <span class="badge">Spring Web</span>
+      <span class="badge">Spring Data JPA</span>
+      <span class="badge">Bean Validation</span>
+      <span class="badge">Spring Security · OAuth2 JWT</span>
+      <span class="badge">SLF4J logging</span>
+      <span class="badge">springdoc / Swagger UI</span>
+      <span class="badge">H2 / PostgreSQL-ready</span>
+      <span class="badge">JUnit 5 · AssertJ</span>
+      <span class="badge">Maven</span>
+    </div>
+    <div class="pillars">
+      <div class="pillar"><div class="n">Priority 1</div><h3>Correctness</h3><p>Money is conserved and balances always reconcile to the ledger — enforced in the database, not in app memory.</p></div>
+      <div class="pillar"><div class="n">Priority 2</div><h3>Readability</h3><p>Thin controllers, one service of bookkeeping logic, immutable DTO <code>record</code>s, no Lombok magic.</p></div>
+      <div class="pillar"><div class="n">Priority 3</div><h3>Cluster-safety</h3><p>Pessimistic row locks + ordered acquisition + a unique idempotency key — correct on N nodes with zero code changes.</p></div>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap">
+    <a href="#overview">Overview</a>
+    <a href="#layers">Layered architecture</a>
+    <a href="#data">Data model</a>
+    <a href="#flow">Transfer flow</a>
+    <a href="#concurrency">Concurrency &amp; correctness</a>
+    <a href="#security">Security (OAuth2)</a>
+    <a href="#observability">Logging</a>
+    <a href="#api">API reference</a>
+    <a href="#usage">How to run &amp; use</a>
+  </div>
+</nav>
+
+<!-- OVERVIEW -->
+<section id="overview"><div class="wrap">
+  <h2><span class="ico">🗺️</span> Overview</h2>
+  <p class="lead">The application exposes two REST resources — <code>/accounts</code> and <code>/transfers</code> — backed by a single transactional service. Internally it is an <strong>append-only double-entry ledger</strong>: every movement of money writes immutable signed entries, and each account's running <code>balance</code> is a cached projection of those entries that is always kept in lock-step inside the same database transaction.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">What it does</h3>
+      <ul class="clean">
+        <li>Create single-currency accounts</li>
+        <li>Deposit, withdraw, and transfer funds</li>
+        <li>Read balances and an auditable per-account ledger</li>
+        <li>Safely retry requests via an idempotency key</li>
+        <li>Authenticate callers with OAuth 2.0 JWT bearer tokens</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">What makes it interesting</h3>
+      <ul class="clean">
+        <li>Money is exact <code>BigDecimal</code> — never floating point</li>
+        <li>Operation type is <em>inferred</em> from which account ids are present</li>
+        <li>Concurrency control lives in the DB, so it scales horizontally</li>
+        <li>A stress test asserts conservation + ledger reconciliation</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note good"><strong>The one-sentence pitch:</strong> a wallet where correctness is a database-enforced invariant rather than something the application code hopes to maintain.</div>
+</div></section>
+
+<!-- LAYERS -->
+<section id="layers"><div class="wrap">
+  <h2><span class="ico">🧱</span> Layered architecture</h2>
+  <p class="lead">A conventional, deliberately boring Spring layering. Each layer has one job; dependencies point strictly downward. The arrows show the request path for a transfer.</p>
+
+  <div class="diagram">
+    <div class="layer">
+      <div class="layer-label">Client</div>
+      <div class="layer-body">
+        <div class="node"><div class="t">HTTP client</div><div class="d">curl · Postman · service</div></div>
+      </div>
+    </div>
+    <div class="arrow">▼ &nbsp; JSON over HTTP · Authorization: Bearer &lt;jwt&gt;</div>
+
+    <div class="layer">
+      <div class="layer-label">Security</div>
+      <div class="layer-body">
+        <div class="node accent"><div class="t">SecurityFilterChain</div><div class="d">OAuth2 resource server · validates JWT · scope→route rules</div></div>
+        <div class="node green"><div class="t">TokenController</div><div class="d">/oauth/token · mints JWTs</div></div>
+      </div>
+    </div>
+    <div class="arrow">▼ &nbsp; authenticated request (SCOPE_wallet.read / SCOPE_wallet.write)</div>
+
+    <div class="layer">
+      <div class="layer-label">Web</div>
+      <div class="layer-body">
+        <div class="node accent"><div class="t">AccountController</div><div class="d">/accounts</div></div>
+        <div class="node accent"><div class="t">TransferController</div><div class="d">/transfers</div></div>
+        <div class="node warn"><div class="t">GlobalExceptionHandler</div><div class="d">@RestControllerAdvice</div></div>
+      </div>
+    </div>
+    <div class="arrow">▼ &nbsp; validated DTO records (TransferRequest, CreateAccountRequest)</div>
+
+    <div class="layer">
+      <div class="layer-label">Service</div>
+      <div class="layer-body">
+        <div class="node green" style="flex:2"><div class="t">WalletService</div><div class="d">@Transactional · all bookkeeping rules · locking · idempotency</div></div>
+      </div>
+    </div>
+    <div class="arrow">▼ &nbsp; Spring Data repositories</div>
+
+    <div class="layer">
+      <div class="layer-label">Data</div>
+      <div class="layer-body">
+        <div class="node purple"><div class="t">AccountRepository</div><div class="d">findByIdForUpdate ⟲</div></div>
+        <div class="node purple"><div class="t">TransactionRepository</div><div class="d">findByIdempotencyKey</div></div>
+        <div class="node purple"><div class="t">LedgerEntryRepository</div><div class="d">findByAccountId…</div></div>
+      </div>
+    </div>
+    <div class="arrow">▼ &nbsp; JPA / Hibernate · SELECT … FOR UPDATE</div>
+
+    <div class="layer">
+      <div class="layer-label">DB</div>
+      <div class="layer-body">
+        <div class="node"><div class="t">accounts</div><div class="d">balance (cached)</div></div>
+        <div class="node"><div class="t">transactions</div><div class="d">headers + uk_idempotency</div></div>
+        <div class="node"><div class="t">ledger_entries</div><div class="d">append-only, signed</div></div>
+      </div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Responsibility</th><th>Key types</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Security</strong></td><td>Stateless OAuth2 resource server: validates the JWT bearer token and enforces scope-per-route. <code>TokenController</code> issues tokens via the client-credentials grant.</td><td><code>SecurityConfig</code>, <code>TokenController</code>, <code>OAuthClientProperties</code></td></tr>
+      <tr><td><strong>Web / Controller</strong></td><td>HTTP mapping, request validation (<code>@Valid</code>), exception→status translation. No business logic.</td><td><code>AccountController</code>, <code>TransferController</code>, <code>GlobalExceptionHandler</code></td></tr>
+      <tr><td><strong>DTO</strong></td><td>Immutable request/response contracts as Java <code>record</code>s; isolate the wire format from entities.</td><td><code>TransferRequest</code>, <code>AccountResponse</code>, <code>BalanceResponse</code>, <code>LedgerEntryResponse</code>, <code>ErrorResponse</code></td></tr>
+      <tr><td><strong>Service</strong></td><td>The transaction boundary. All correctness rules: validation, type resolution, locking order, debit/credit, ledger writes, idempotency.</td><td><code>WalletService</code></td></tr>
+      <tr><td><strong>Domain / Model</strong></td><td>JPA entities that own their invariants — e.g. <code>Account.debit()</code> refuses to go negative.</td><td><code>Account</code>, <code>Transaction</code>, <code>LedgerEntry</code>, <code>TransactionType</code></td></tr>
+      <tr><td><strong>Repository</strong></td><td>Spring Data JPA persistence, including the pessimistic-lock query.</td><td><code>AccountRepository</code> (+ <code>findByIdForUpdate</code>), <code>TransactionRepository</code>, <code>LedgerEntryRepository</code></td></tr>
+    </tbody>
+  </table>
+</div></section>
+
+<!-- DATA MODEL -->
+<section id="data"><div class="wrap">
+  <h2><span class="ico">🗄️</span> Data model</h2>
+  <p class="lead">Three tables implementing double-entry bookkeeping. The ledger is the source of truth; the account balance is a cached aggregate that must always equal the sum of its entries.</p>
+
+  <div class="diagram">
+    <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start">
+      <div class="node accent" style="min-width:230px">
+        <div class="t">accounts</div>
+        <div class="d" style="margin-top:8px; line-height:1.9">
+          <span class="tag">PK</span> id : UUID<br>
+          currency : char(3)<br>
+          balance : DECIMAL(19,4) <span class="muted">← cached</span><br>
+          created_at : timestamp
+        </div>
+      </div>
+      <div class="node green" style="min-width:250px">
+        <div class="t">transactions <span class="muted">(header)</span></div>
+        <div class="d" style="margin-top:8px; line-height:1.9">
+          <span class="tag">PK</span> id : UUID<br>
+          idempotency_key <span class="tag">UNIQUE</span><br>
+          type : DEPOSIT|WITHDRAWAL|TRANSFER<br>
+          from_account_id, to_account_id<br>
+          amount : DECIMAL(19,4)<br>
+          currency, timestamp
+        </div>
+      </div>
+      <div class="node purple" style="min-width:250px">
+        <div class="t">ledger_entries <span class="muted">(append-only)</span></div>
+        <div class="d" style="margin-top:8px; line-height:1.9">
+          <span class="tag">PK</span> id : UUID<br>
+          account_id <span class="tag">idx</span><br>
+          transaction_id<br>
+          amount : DECIMAL(19,4) <span class="muted">← signed</span><br>
+          balance_after : DECIMAL(19,4)<br>
+          timestamp
+        </div>
+      </div>
+    </div>
+    <div class="muted" style="font-size:.82rem; margin-top:14px">
+      One <strong>transaction</strong> → one or two <strong>ledger entries</strong>. A <code>TRANSFER</code> writes a debit <code>−X</code> on the sender and a credit <code>+X</code> on the receiver; a <code>DEPOSIT</code>/<code>WITHDRAWAL</code> writes a single entry.
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">Why a signed, append-only ledger?</h3>
+      <p class="muted" style="margin:0">Entries are never updated or deleted, so the history is auditable and tamper-evident. Each row also stores <code>balance_after</code>, giving a running balance and making the core invariant trivially checkable: <code>balance == Σ(entry.amount)</code>.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Why cache the balance at all?</h3>
+      <p class="muted" style="margin:0">Reading a balance is the hot path. Summing a growing ledger on every read is O(history). The cached column makes reads O(1) while the ledger stays authoritative — and the two are written together under one lock, so they can never drift.</p>
+    </div>
+  </div>
+</div></section>
+
+<!-- FLOW -->
+<section id="flow"><div class="wrap">
+  <h2><span class="ico">🔀</span> Transfer flow (the heart of the system)</h2>
+  <p class="lead">A single <code>POST /transfers</code> endpoint handles deposit, withdrawal, and transfer. The operation is inferred from which account ids are present — both → transfer, only <em>to</em> → deposit, only <em>from</em> → withdrawal.</p>
+
+  <ol class="seq">
+    <li><b>Idempotency check.</b> If an <code>idempotencyKey</code> is supplied and already exists, the stored transaction is returned (after verifying the parameters match) — no money moves twice. Mismatched params on a reused key → <span class="tag">409</span>.</li>
+    <li><b>Validate &amp; classify.</b> Amount &gt; 0, currency present, at least one account id, sender ≠ receiver. Then <code>resolveType()</code> maps the id combination to a <code>TransactionType</code>.</li>
+    <li><b>Acquire locks in deterministic order.</b> Affected accounts are loaded with <code>SELECT … FOR UPDATE</code>, sorted by ascending UUID. This global ordering is what makes deadlock between opposing transfers impossible.</li>
+    <li><b>Enforce business rules.</b> Currencies must match the transaction currency; <code>Account.debit()</code> throws <code>InsufficientFundsException</code> rather than letting a balance go negative.</li>
+    <li><b>Apply &amp; record atomically.</b> Debit/credit the in-memory entities, save the transaction header, then append the signed ledger entry(ies) — all inside one <code>@Transactional</code> boundary.</li>
+    <li><b>Commit.</b> JPA flushes the managed entities; balance change + ledger entries commit or roll back <em>together</em>. Locks release on commit.</li>
+  </ol>
+
+  <h3>The locking + atomicity core, in code</h3>
+  <pre><span class="tok-key">@Transactional</span>
+<span class="tok-key">public</span> Transaction <span class="tok-fn">transfer</span>(TransferRequest request) {
+    <span class="tok-com">// 1. Idempotency — return the prior result instead of re-applying</span>
+    <span class="tok-key">if</span> (key != <span class="tok-key">null</span>) {
+        Optional&lt;Transaction&gt; existing = transactionRepository.findByIdempotencyKey(key);
+        <span class="tok-key">if</span> (existing.isPresent()) <span class="tok-key">return</span> verifyIdempotentMatch(existing.get(), request);
+    }
+
+    validate(request);
+    TransactionType type = resolveType(request);   <span class="tok-com">// TRANSFER / DEPOSIT / WITHDRAWAL</span>
+
+    <span class="tok-key">switch</span> (type) {
+      <span class="tok-key">case</span> TRANSFER -> {
+        <span class="tok-com">// 3. Lock BOTH rows in ascending-id order → no deadlock</span>
+        Map&lt;UUID,Account&gt; locked = lockAccounts(List.of(fromId, toId));
+        Account from = locked.get(fromId), to = locked.get(toId);
+
+        requireSameCurrency(from, currency);
+        requireSameCurrency(to, currency);
+
+        from.debit(amount);    <span class="tok-com">// throws if it would go negative</span>
+        to.credit(amount);
+
+        transactionRepository.save(transaction);
+        recordEntry(from, transaction, amount.negate());  <span class="tok-com">// −X</span>
+        recordEntry(to,   transaction, amount);           <span class="tok-com">// +X</span>
+      }
+      <span class="tok-com">// DEPOSIT / WITHDRAWAL: lock one account, single ledger entry</span>
+    }
+    <span class="tok-key">return</span> transaction;   <span class="tok-com">// managed entities flush on commit</span>
+}</pre>
+
+  <pre><span class="tok-com">// Always acquire locks in a consistent global order (ascending UUID)</span>
+<span class="tok-key">private</span> Map&lt;UUID,Account&gt; <span class="tok-fn">lockAccounts</span>(List&lt;UUID&gt; ids) {
+    Map&lt;UUID,Account&gt; locked = <span class="tok-key">new</span> LinkedHashMap&lt;&gt;();
+    ids.stream().distinct().<span class="tok-fn">sorted</span>().forEach(id -> {
+        Account account = accountRepository.<span class="tok-fn">findByIdForUpdate</span>(id)   <span class="tok-com">// SELECT … FOR UPDATE</span>
+                .orElseThrow(() -> <span class="tok-key">new</span> AccountNotFoundException(id));
+        locked.put(id, account);
+    });
+    <span class="tok-key">return</span> locked;
+}</pre>
+</div></section>
+
+<!-- CONCURRENCY -->
+<section id="concurrency"><div class="wrap">
+  <h2><span class="ico">🔒</span> Concurrency &amp; correctness</h2>
+  <p class="lead">The brief's headline rule — "it should never be possible to get an incorrect balance" — is reduced to two invariants and enforced entirely at the database layer.</p>
+
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0">Invariant 1 — Conservation</h3><p class="muted" style="margin:0">The sum of all balances never changes; no money is created or destroyed. A lost update (the classic missing-lock bug) would break this.</p></div>
+    <div class="card"><h3 style="margin-top:0">Invariant 2 — Ledger consistency</h3><p class="muted" style="margin:0">For every account, <code>balance == Σ(ledger entry amounts)</code>. The cached balance can never silently drift from the source of truth.</p></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Mechanism</th><th>What it guarantees</th></tr></thead>
+    <tbody>
+      <tr><td><strong>One transaction per mutation</strong><br><span class="muted">@Transactional</span></td><td>Balance change and ledger entries commit or roll back together. A rejected transfer (e.g. insufficient funds) leaves no trace.</td></tr>
+      <tr><td><strong>Pessimistic row locks</strong><br><span class="muted">SELECT … FOR UPDATE</span></td><td>Held until commit, so two transfers touching the same account are serialised — lost updates are impossible.</td></tr>
+      <tr><td><strong>Ordered lock acquisition</strong><br><span class="muted">ascending UUID</span></td><td>A consistent global lock order prevents deadlock between transfers moving money the opposite way between the same pair.</td></tr>
+      <tr><td><strong>Idempotency key</strong><br><span class="muted">UNIQUE constraint</span></td><td>Safe client retries. Even two concurrent same-key requests can create at most one transaction (the DB rejects the second).</td></tr>
+      <tr><td><strong>Entity-level guard</strong><br><span class="muted">Account.debit()</span></td><td>A balance can never go negative — the rule lives on the entity, not just in the service.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note good">
+    <strong>Why this clusters with zero code changes.</strong> Nothing relies on JVM-local state — no <code>synchronized</code>, no in-memory map. The locks and the unique constraint are enforced by the database for <em>all</em> connections. Run N identical wallet nodes against one shared PostgreSQL and it stays correct; the only reason the demo runs single-node is that H2 is in-memory and not shared. Swapping in PostgreSQL is a <code>spring.datasource.url</code> change.
+  </div>
+
+  <h3>The stress test that proves it</h3>
+  <p class="muted">
+    <code>WalletServiceConcurrencyTest</code> seeds 8 accounts with 1,000.00 EUR each, then fires <strong>8 threads × 200 = 1,600 overlapping random transfers</strong> released simultaneously via a <code>CountDownLatch</code>. After the storm it asserts both invariants: total money unchanged, and every balance still equals the sum of its ledger entries. If locking were missing or the order inconsistent, conservation would fail or it would deadlock.
+  </p>
+</div></section>
+
+<!-- SECURITY -->
+<section id="security"><div class="wrap">
+  <h2><span class="ico">🔑</span> Security — OAuth 2.0</h2>
+  <p class="lead">Every <code>/accounts</code> and <code>/transfers</code> call must carry a JWT bearer token. The wallet is a stateless <strong>OAuth 2.0 Resource Server</strong>: it validates the token's signature and expiry, then authorises the call against the scopes inside it. There is no session and no server-side login state — exactly what lets it run on N nodes.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-top:0">Scopes → endpoints</h3>
+      <ul class="clean">
+        <li><span class="tag">wallet.write</span> — required for <code>POST /accounts</code> and <code>POST /transfers</code></li>
+        <li><span class="tag">wallet.read</span> — required for every <code>GET /accounts/**</code></li>
+      </ul>
+      <p class="muted" style="margin:.4rem 0 0">The token's <code>scope</code> claim is mapped to Spring <code>SCOPE_*</code> authorities and checked per route in <code>SecurityConfig</code>.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Open (unauthenticated) paths</h3>
+      <ul class="clean">
+        <li><code>POST /oauth/token</code> — get a token</li>
+        <li><code>/swagger-ui/**</code>, <code>/v3/api-docs/**</code> — docs</li>
+        <li><code>/h2-console/**</code> — dev DB console</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>How a request is authorised</h3>
+  <pre>client ──(client_id + client_secret)──▶ POST /oauth/token
+                                          │  client-credentials grant
+       ◀───────── signed JWT ────────────┘  (scope: "wallet.read wallet.write")
+
+client ──(Authorization: Bearer &lt;jwt&gt;)──▶ POST /transfers
+                                          │  1. JwtDecoder verifies RS256 signature + expiry
+                                          │  2. scope claim → SCOPE_wallet.write authority
+                                          │  3. route rule requires SCOPE_wallet.write  ✓
+       ◀──────── 201 Created ────────────┘</pre>
+
+  <div class="note">
+    <strong>Self-contained by design.</strong> To keep the project zero-setup, an RSA key pair is generated <em>in memory at startup</em> and a single static demo client (<code>demo-client</code> / <code>demo-secret</code>) is configured in <code>application.properties</code>. The same service both <em>mints</em> tokens (<code>/oauth/token</code>, the <code>JwtEncoder</code>) and <em>verifies</em> them (the <code>JwtDecoder</code>). Tokens are signed with RS256 and do not survive a restart (the key is regenerated).
+  </div>
+  <div class="note good">
+    <strong>Production swap.</strong> Delete <code>TokenController</code> and point the resource server at a real Authorization Server (Keycloak / Auth0 / Spring Authorization Server) with a single property — <code>spring.security.oauth2.resourceserver.jwt.issuer-uri</code>. The route-level scope rules stay exactly as they are.
+  </div>
+</div></section>
+
+<!-- OBSERVABILITY -->
+<section id="observability"><div class="wrap">
+  <h2><span class="ico">📋</span> Logging &amp; observability</h2>
+  <p class="lead">Structured SLF4J logging runs through the whole request path so each money movement, auth decision and rejection leaves an auditable trail. Business events log at <code>INFO</code>; per-step mechanics at <code>DEBUG</code>; client mistakes at <code>WARN</code>; only genuine surprises at <code>ERROR</code> (with a stack trace).</p>
+  <table>
+    <thead><tr><th>Where</th><th>Level</th><th>What it records</th></tr></thead>
+    <tbody>
+      <tr><td><code>WalletService</code></td><td><span class="tag">INFO</span></td><td>account created; money moved (<code>type, tx, from, to, amount</code>); idempotent replays returning the original transaction</td></tr>
+      <tr><td><code>WalletService</code></td><td><span class="tag">DEBUG</span></td><td>request shape before processing; the exact set + order of accounts write-locked</td></tr>
+      <tr><td><code>TokenController</code></td><td><span class="tag">INFO</span> / <span class="tag">WARN</span></td><td>token issued (client + granted scopes); rejected on bad grant, client or scope — never logs the secret</td></tr>
+      <tr><td><code>GlobalExceptionHandler</code></td><td><span class="tag">WARN</span> / <span class="tag">ERROR</span></td><td>4xx client errors at WARN/DEBUG so a noisy caller can't flood ERROR; unexpected 5xx at ERROR with stack trace</td></tr>
+      <tr><td><code>SecurityConfig</code> / startup</td><td><span class="tag">INFO</span></td><td>security wiring, generated signing-key id, and the token / Swagger URLs printed once on boot</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Levels are tuned in <code>application.properties</code>: <code>com.cubeia.wallet=DEBUG</code>, <code>root=INFO</code>, with a concise timestamped console pattern. A sample money-movement line:</p>
+  <pre><span class="tok-com"># INFO  c.c.wallet.service.WalletService -</span> TRANSFER applied: tx=f3e5c75a…, from=cc2a72ac…, to=55ba3daa…, amount=30.00 EUR</pre>
+</div></section>
+
+<!-- API -->
+<section id="api"><div class="wrap">
+  <h2><span class="ico">🌐</span> API reference</h2>
+  <p class="lead">Base URL <code>http://localhost:8080</code>. All bodies are JSON. Money is serialised at 4-decimal scale; timestamps are ISO-8601.</p>
+  <div class="note"><strong>Auth required.</strong> Every <code>/accounts</code> and <code>/transfers</code> endpoint needs an <code>Authorization: Bearer &lt;jwt&gt;</code> header (scope <span class="tag">wallet.write</span> for POSTs, <span class="tag">wallet.read</span> for GETs). Get a token from <code>POST /oauth/token</code> below. A missing/expired token returns <span class="tag">401</span>; a valid token lacking the required scope returns <span class="tag">403</span>.</div>
+
+  <h3><span class="method m-post">POST</span><code>/oauth/token</code> — obtain an access token</h3>
+  <p class="muted">Client-credentials grant. Send <code>application/x-www-form-urlencoded</code>; the response is a standard OAuth2 token body.</p>
+  <pre>curl -s -X POST http://localhost:8080/oauth/token \
+  -d grant_type=client_credentials \
+  -d client_id=demo-client -d client_secret=demo-secret
+
+<span class="tok-com"># 200 OK</span>
+{"access_token":"eyJraWQ…","token_type":"Bearer","expires_in":3600,"scope":"wallet.read wallet.write"}</pre>
+
+  <h3><span class="method m-post">POST</span><code>/accounts</code> — create an account</h3>
+  <div class="grid2">
+    <pre><span class="tok-com">// request</span>
+{ <span class="tok-str">"currency"</span>: <span class="tok-str">"EUR"</span> }</pre>
+    <pre><span class="tok-com">// 201 Created</span>
+{
+  <span class="tok-str">"id"</span>: <span class="tok-str">"1f0a…"</span>,
+  <span class="tok-str">"currency"</span>: <span class="tok-str">"EUR"</span>,
+  <span class="tok-str">"balance"</span>: <span class="tok-num">0.0000</span>,
+  <span class="tok-str">"createdAt"</span>: <span class="tok-str">"2026-…"</span>
+}</pre>
+  </div>
+
+  <h3><span class="method m-get">GET</span><code>/accounts/{id}</code> &nbsp;·&nbsp; <span class="method m-get">GET</span><code>/accounts/{id}/balance</code></h3>
+  <pre><span class="tok-com">// GET /accounts/{id}/balance → 200 OK</span>
+{ <span class="tok-str">"accountId"</span>: <span class="tok-str">"1f0a…"</span>, <span class="tok-str">"currency"</span>: <span class="tok-str">"EUR"</span>, <span class="tok-str">"balance"</span>: <span class="tok-num">100.0000</span> }</pre>
+
+  <h3><span class="method m-post">POST</span><code>/transfers</code> — deposit / withdraw / transfer</h3>
+  <p class="muted">The presence of <code>fromAccountId</code> / <code>toAccountId</code> selects the operation:</p>
+  <table>
+    <thead><tr><th>from</th><th>to</th><th>meaning</th></tr></thead>
+    <tbody>
+      <tr><td>✓</td><td>✓</td><td>transfer between two accounts</td></tr>
+      <tr><td>—</td><td>✓</td><td>deposit (funds enter from outside)</td></tr>
+      <tr><td>✓</td><td>—</td><td>withdrawal (funds leave the system)</td></tr>
+    </tbody>
+  </table>
+  <div class="grid2">
+    <pre><span class="tok-com">// request</span>
+{
+  <span class="tok-str">"idempotencyKey"</span>: <span class="tok-str">"opt-unique"</span>,
+  <span class="tok-str">"fromAccountId"</span>: <span class="tok-str">"…"</span>,  <span class="tok-com">// omit → deposit</span>
+  <span class="tok-str">"toAccountId"</span>:   <span class="tok-str">"…"</span>,  <span class="tok-com">// omit → withdrawal</span>
+  <span class="tok-str">"amount"</span>: <span class="tok-num">25.00</span>,
+  <span class="tok-str">"currency"</span>: <span class="tok-str">"EUR"</span>
+}</pre>
+    <pre><span class="tok-com">// 201 Created</span>
+{
+  <span class="tok-str">"transactionId"</span>: <span class="tok-str">"…"</span>,
+  <span class="tok-str">"type"</span>: <span class="tok-str">"TRANSFER"</span>,
+  <span class="tok-str">"fromAccountId"</span>: <span class="tok-str">"…"</span>,
+  <span class="tok-str">"toAccountId"</span>: <span class="tok-str">"…"</span>,
+  <span class="tok-str">"amount"</span>: <span class="tok-num">25.0000</span>,
+  <span class="tok-str">"currency"</span>: <span class="tok-str">"EUR"</span>,
+  <span class="tok-str">"timestamp"</span>: <span class="tok-str">"…"</span>
+}</pre>
+  </div>
+
+  <h3><span class="method m-get">GET</span><code>/accounts/{id}/transactions</code> — the account ledger</h3>
+  <p class="muted"><code>200 OK</code> — list of ledger entries oldest-first, each with the signed <code>amount</code> and the <code>balanceAfter</code> at that point.</p>
+
+  <h3>Error contract</h3>
+  <p class="muted">Every error returns the same shape via <code>GlobalExceptionHandler</code>:</p>
+  <pre>{ <span class="tok-str">"status"</span>: <span class="tok-num">422</span>, <span class="tok-str">"error"</span>: <span class="tok-str">"Unprocessable Entity"</span>, <span class="tok-str">"message"</span>: <span class="tok-str">"Insufficient funds …"</span>, <span class="tok-str">"timestamp"</span>: <span class="tok-str">"…"</span> }</pre>
+  <table>
+    <thead><tr><th>Situation</th><th>Status</th><th>Exception</th></tr></thead>
+    <tbody>
+      <tr><td>Account not found</td><td><span class="tag">404</span></td><td><code>AccountNotFoundException</code></td></tr>
+      <tr><td>Malformed / invalid request</td><td><span class="tag">400</span></td><td><code>InvalidTransferException</code> · bean validation</td></tr>
+      <tr><td>Insufficient funds</td><td><span class="tag">422</span></td><td><code>InsufficientFundsException</code></td></tr>
+      <tr><td>Currency mismatch</td><td><span class="tag">422</span></td><td><code>CurrencyMismatchException</code></td></tr>
+      <tr><td>Idempotency key reused with different params / race</td><td><span class="tag">409</span></td><td><code>IdempotencyConflictException</code> · <code>DataIntegrityViolation</code></td></tr>
+      <tr><td>Missing / expired / invalid bearer token</td><td><span class="tag">401</span></td><td>Spring Security (resource server)</td></tr>
+      <tr><td>Valid token without the required scope</td><td><span class="tag">403</span></td><td>Spring Security (scope rule)</td></tr>
+      <tr><td>Bad grant / client / scope at <code>/oauth/token</code></td><td><span class="tag">400</span> / <span class="tag">401</span></td><td><code>OAuthTokenException</code></td></tr>
+    </tbody>
+  </table>
+</div></section>
+
+<!-- USAGE -->
+<section id="usage"><div class="wrap">
+  <h2><span class="ico">▶️</span> How to run &amp; use</h2>
+  <p class="lead">Requires JDK 17+ and Maven. Zero external setup — the demo runs on an in-memory H2 database.</p>
+
+  <h3>1 · Build &amp; run</h3>
+  <pre><span class="tok-com"># run the server (http://localhost:8080)</span>
+mvn spring-boot:run
+
+<span class="tok-com"># run the full test suite incl. the concurrency stress test</span>
+mvn test
+
+<span class="tok-com"># build and run a self-contained jar</span>
+mvn clean package
+java -jar target/java-wallet-1.0.0.jar</pre>
+  <div class="note">The H2 web console is at <a href="http://localhost:8080/h2-console">http://localhost:8080/h2-console</a> — JDBC URL <code>jdbc:h2:mem:wallet</code>, user <code>sa</code>, no password — if you want to peek at the tables.</div>
+
+  <h3>2 · Explore the API in the browser (Swagger UI)</h3>
+  <p class="lead" style="margin-bottom:10px">Docs are generated automatically from the controllers and DTOs by <a href="https://springdoc.org/">springdoc-openapi</a> — every endpoint is callable straight from the page.</p>
+  <ul class="clean">
+    <li><strong>Swagger UI:</strong> <a href="http://localhost:8080/swagger-ui.html">http://localhost:8080/swagger-ui.html</a> — interactive "Try it out" for all endpoints</li>
+    <li><strong>OpenAPI 3 spec (JSON):</strong> <a href="http://localhost:8080/v3/api-docs">http://localhost:8080/v3/api-docs</a> — import into Postman / generate clients</li>
+  </ul>
+  <div class="note">Endpoints are OAuth2-protected, so first call <code>POST /oauth/token</code> from the page (or <code>demo.sh</code>), copy the <code>access_token</code>, click <strong>Authorize 🔒</strong> at the top of Swagger UI and paste it — then "Try it out" sends the bearer header on every request.</div>
+
+  <h3>3 · End-to-end walkthrough (curl)</h3>
+  <pre><span class="tok-key">BASE</span>=http://localhost:8080
+
+<span class="tok-com"># 0. get an OAuth2 token and reuse it as a bearer header</span>
+TOKEN=$(curl -s -X POST $BASE/oauth/token \
+      -d grant_type=client_credentials \
+      -d client_id=demo-client -d client_secret=demo-secret \
+      | sed -E <span class="tok-str">'s/.*"access_token":"([^"]+)".*/\1/'</span>)
+AUTH=<span class="tok-str">"Authorization: Bearer $TOKEN"</span>
+
+<span class="tok-com"># create two EUR accounts (capture the ids)</span>
+A=$(curl -s -X POST $BASE/accounts -H <span class="tok-str">"$AUTH"</span> -H <span class="tok-str">'Content-Type: application/json'</span> \
+      -d <span class="tok-str">'{"currency":"EUR"}'</span> | sed -E <span class="tok-str">'s/.*"id":"([^"]+)".*/\1/'</span>)
+B=$(curl -s -X POST $BASE/accounts -H <span class="tok-str">"$AUTH"</span> -H <span class="tok-str">'Content-Type: application/json'</span> \
+      -d <span class="tok-str">'{"currency":"EUR"}'</span> | sed -E <span class="tok-str">'s/.*"id":"([^"]+)".*/\1/'</span>)
+
+<span class="tok-com"># deposit 100 into A  (only toAccountId → DEPOSIT)</span>
+curl -s -X POST $BASE/transfers -H <span class="tok-str">"$AUTH"</span> -H <span class="tok-str">'Content-Type: application/json'</span> \
+  -d <span class="tok-str">"{\"toAccountId\":\"$A\",\"amount\":100.00,\"currency\":\"EUR\"}"</span>
+
+<span class="tok-com"># transfer 30 from A to B  (both ids → TRANSFER)</span>
+curl -s -X POST $BASE/transfers -H <span class="tok-str">"$AUTH"</span> -H <span class="tok-str">'Content-Type: application/json'</span> \
+  -d <span class="tok-str">"{\"fromAccountId\":\"$A\",\"toAccountId\":\"$B\",\"amount\":30.00,\"currency\":\"EUR\"}"</span>
+
+<span class="tok-com"># balances: A = 70, B = 30</span>
+curl -s $BASE/accounts/$A/balance -H <span class="tok-str">"$AUTH"</span>
+curl -s $BASE/accounts/$B/balance -H <span class="tok-str">"$AUTH"</span>
+
+<span class="tok-com"># A's ledger (oldest first, with running balanceAfter)</span>
+curl -s $BASE/accounts/$A/transactions -H <span class="tok-str">"$AUTH"</span></pre>
+  <div class="note good"><strong><code>demo.sh</code> is ready to run this curl end-to-end test.</strong> A ready-to-run version of the whole walkthrough above lives in <code>demo.sh</code> at the project root — start the server, then execute <code>bash demo.sh</code> (override the host with <code>BASE=…</code>) to drive the full flow and assert the expected balances and ledger in one go.</div>
+
+  <h3>4 · Run the test collection (Postman / newman)</h3>
+  <p class="lead" style="margin-bottom:10px"><code>wallet.postman_collection.json</code> drives the same end-to-end flow as <code>demo.sh</code> but adds an assertion to each step. It is <strong>self-contained</strong> — the access token, both account ids, and a fresh per-run idempotency key are captured into collection variables by test scripts, so there is nothing to fill in by hand.</p>
+  <pre><span class="tok-com"># run headless from the CLI with newman (no install needed if you have npx)</span>
+npx --yes newman run wallet.postman_collection.json
+
+<span class="tok-com"># override the target without editing the file</span>
+npx --yes newman run wallet.postman_collection.json \
+  --env-var <span class="tok-key">baseUrl</span>=http://localhost:8080 \
+  --env-var <span class="tok-key">clientId</span>=demo-client \
+  --env-var <span class="tok-key">clientSecret</span>=demo-secret</pre>
+  <ul class="clean">
+    <li><strong>CLI (newman):</strong> a green run reports <strong>9 requests / 6 assertions, 0 failures</strong>.</li>
+    <li><strong>Postman app:</strong> <em>Import</em> → <code>wallet.postman_collection.json</code> → open <strong>Java Wallet API</strong> → <strong>Run</strong>. Requests are ordered (token → accounts → transfers → balances), so use the Collection Runner rather than firing them out of order.</li>
+  </ul>
+  <div class="note">Because the idempotency key is regenerated per run, the collection is safely <strong>re-runnable</strong> against a long-lived server — no <span class="tag">409</span> conflict on the second pass.</div>
+
+  <h3>5 · Try the safety nets</h3>
+  <ul class="clean">
+    <li><strong>Idempotent retry</strong> — send the same <code>POST /transfers</code> twice with the same <code>idempotencyKey</code>; the money moves once and both calls return the same transaction.</li>
+    <li><strong>Insufficient funds</strong> — withdraw more than a balance → <span class="tag">422</span>, and nothing is written (verify the ledger is unchanged).</li>
+    <li><strong>Currency mismatch</strong> — transfer <code>USD</code> between <code>EUR</code> accounts → <span class="tag">422</span>.</li>
+    <li><strong>Auth required</strong> — call any endpoint without the bearer header → <span class="tag">401</span>; request a <code>wallet.read</code>-only token (<code>-d scope=wallet.read</code>) and try a <code>POST</code> → <span class="tag">403</span>.</li>
+    <li><strong>Concurrency proof</strong> — run <code>mvn test</code> and watch <code>WalletServiceConcurrencyTest</code> hammer the service with 1,600 overlapping transfers, then assert money is conserved.</li>
+  </ul>
+
+  <h3>6 · Point it at PostgreSQL (production / cluster)</h3>
+  <pre><span class="tok-com"># application.properties — no code changes needed</span>
+spring.datasource.url=jdbc:postgresql://db-host:5432/wallet
+spring.jpa.hibernate.ddl-auto=validate   <span class="tok-com"># + Flyway/Liquibase migrations</span></pre>
+</div></section>
+
+<footer><div class="wrap">
+  <strong>Java Wallet</strong> · Cubeia coding challenge · Spring Boot 3.2 / Java 17 ·
+  design priorities: correctness › readability › cluster-safety.
+  <br>Generated architecture document — open <code>ARCHITECTURE.html</code> in any browser.
+</div></footer>
+
+</body>
+</html>

@@ -1,0 +1,249 @@
+{
+  "info": {
+    "name": "Java Wallet API",
+    "description": "End-to-end wallet demo mirroring demo.sh: obtain an OAuth2 token, create two EUR accounts, deposit, idempotent transfer, and inspect balances + ledger.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "clientId", "value": "demo-client", "type": "string" },
+    { "key": "clientSecret", "value": "demo-secret", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "accountA", "value": "", "type": "string" },
+    { "key": "accountB", "value": "", "type": "string" },
+    { "key": "idempotencyKey", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Get access token (client-credentials)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', () => pm.response.to.have.status(200));",
+              "const token = pm.response.json().access_token;",
+              "pm.collectionVariables.set('accessToken', token);",
+              "console.log('accessToken set (' + (token ? token.length : 0) + ' chars)');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "grant_type", "value": "client_credentials" },
+            { "key": "client_id", "value": "{{clientId}}" },
+            { "key": "client_secret", "value": "{{clientSecret}}" }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/oauth/token",
+          "host": ["{{baseUrl}}"],
+          "path": ["oauth", "token"]
+        }
+      }
+    },
+    {
+      "name": "Create account A (EUR)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));",
+              "const id = pm.response.json().id;",
+              "pm.collectionVariables.set('accountA', id);",
+              "console.log('accountA =', id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"currency\":\"EUR\"}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/accounts",
+          "host": ["{{baseUrl}}"],
+          "path": ["accounts"]
+        }
+      }
+    },
+    {
+      "name": "Create account B (EUR)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', () => pm.response.to.have.status(201));",
+              "const id = pm.response.json().id;",
+              "pm.collectionVariables.set('accountB', id);",
+              "console.log('accountB =', id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"currency\":\"EUR\"}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/accounts",
+          "host": ["{{baseUrl}}"],
+          "path": ["accounts"]
+        }
+      }
+    },
+    {
+      "name": "Deposit 100.00 into A",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"toAccountId\":\"{{accountA}}\",\"amount\":100.00,\"currency\":\"EUR\"}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/transfers",
+          "host": ["{{baseUrl}}"],
+          "path": ["transfers"]
+        }
+      }
+    },
+    {
+      "name": "Transfer 30.00 A -> B (idempotent)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Generate one fresh idempotency key per run so the collection is re-runnable",
+              "// against a long-lived server; the repeat request reuses this same key.",
+              "const key = 'demo-' + Date.now();",
+              "pm.collectionVariables.set('idempotencyKey', key);",
+              "console.log('idempotencyKey =', key);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"idempotencyKey\":\"{{idempotencyKey}}\",\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountB}}\",\"amount\":30.00,\"currency\":\"EUR\"}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/transfers",
+          "host": ["{{baseUrl}}"],
+          "path": ["transfers"]
+        }
+      }
+    },
+    {
+      "name": "Repeat transfer (same key, no double spend)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('idempotent replay does not error', () => pm.expect(pm.response.code).to.be.below(500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"idempotencyKey\":\"{{idempotencyKey}}\",\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountB}}\",\"amount\":30.00,\"currency\":\"EUR\"}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/transfers",
+          "host": ["{{baseUrl}}"],
+          "path": ["transfers"]
+        }
+      }
+    },
+    {
+      "name": "Balance A (expect 70.0000)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('balance A is 70.0000', () => pm.expect(Number(pm.response.json().balance)).to.eql(70));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/accounts/{{accountA}}/balance",
+          "host": ["{{baseUrl}}"],
+          "path": ["accounts", "{{accountA}}", "balance"]
+        }
+      }
+    },
+    {
+      "name": "Balance B (expect 30.0000)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('balance B is 30.0000', () => pm.expect(Number(pm.response.json().balance)).to.eql(30));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/accounts/{{accountB}}/balance",
+          "host": ["{{baseUrl}}"],
+          "path": ["accounts", "{{accountB}}", "balance"]
+        }
+      }
+    },
+    {
+      "name": "Ledger for A",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/accounts/{{accountA}}/transactions",
+          "host": ["{{baseUrl}}"],
+          "path": ["accounts", "{{accountA}}", "transactions"]
+        }
+      }
+    }
+  ]
+}
