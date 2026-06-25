@@ -1,7 +1,7 @@
 # Java Wallet
 
 A small bookkeeping (wallet) service that tracks account balances and money
-movements over a REST API. Built for the Cubeia coding challenge.
+movements over a REST API.
 
 The design priorities, in order, match the brief: **correctness first**
 (an incorrect balance must never be observable), then **readability**, then
