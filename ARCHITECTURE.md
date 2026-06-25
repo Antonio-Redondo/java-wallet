@@ -317,10 +317,13 @@ client ──(Authorization: Bearer <jwt>)──▶ POST /transfers
 
 > **Self-contained by design.** To keep the project zero-setup, an RSA key pair is
 > generated *in memory at startup* and a single static demo client (`demo-client`
-> / `demo-secret`) is configured in `application.properties`. The same service both
-> *mints* tokens (`/oauth/token`, the `JwtEncoder`) and *verifies* them (the
-> `JwtDecoder`). Tokens are signed with RS256 and do not survive a restart (the
-> key is regenerated).
+> / `demo-secret`) is configured in `application.properties`. The id and secret
+> default to those demo values but each is overridable by an environment variable
+> (`WALLET_SECURITY_CLIENT_ID` / `WALLET_SECURITY_CLIENT_SECRET`), so a real secret
+> can be injected at deploy time and never committed to source control. The same
+> service both *mints* tokens (`/oauth/token`, the `JwtEncoder`) and *verifies*
+> them (the `JwtDecoder`). Tokens are signed with RS256 and do not survive a
+> restart (the key is regenerated).
 
 > **Production swap.** Delete `TokenController` and point the resource server at a
 > real Authorization Server (Keycloak / Auth0 / Spring Authorization Server) with a
@@ -344,12 +347,30 @@ genuine surprises at `ERROR` (with a stack trace).
 | `GlobalExceptionHandler` | WARN / ERROR | 4xx client errors at WARN/DEBUG so a noisy caller can't flood ERROR; unexpected 5xx at ERROR with stack trace |
 | `SecurityConfig` / startup | INFO | security wiring, generated signing-key id, and the token / Swagger URLs printed once on boot |
 
-Levels are tuned in `application.properties`: `com.wallet=DEBUG`,
-`root=INFO`, with a concise timestamped console pattern. A sample money-movement
-line:
+**Per-request correlation.** `RequestCorrelationFilter` runs first in the filter
+chain and assigns every request a `requestId` (honouring an inbound
+`X-Request-Id` header from an upstream gateway, or generating a UUID). It is
+placed in the SLF4J `MDC`, echoed back on the response `X-Request-Id` header, and
+cleared after the request, so **every log line emitted while handling a request
+shares one id** — a single transfer can be traced end-to-end, even across nodes.
+
+**Two output formats**, selected by Spring profile in `logback-spring.xml`:
+- **default (dev / demo)** — a concise, human-readable console line, now carrying
+  the correlation id (`[req=…]`).
+- **`prod`** — one JSON object per line (logstash encoder), ready to ship into a
+  log aggregator (ELK / Loki / CloudWatch). Activate with
+  `SPRING_PROFILES_ACTIVE=prod`.
+
+Log *levels* are tuned in `application.properties` (`com.wallet=DEBUG`,
+`root=INFO`) and apply to both formats. A sample money-movement line — readable
+console then the same event as JSON:
 
 ```
-# INFO  c.c.wallet.service.WalletService - TRANSFER applied: tx=f3e5c75a…, from=cc2a72ac…, to=55ba3daa…, amount=30.00 EUR
+14:33:55.478 INFO  [http-nio-8080-exec-2] [req=d7fd5c77…] c.w.service.WalletService - TRANSFER applied: tx=f3e5c75a…, from=cc2a72ac…, to=55ba3daa…, amount=30.00 EUR
+```
+
+```json
+{"@timestamp":"2026-…","level":"INFO","logger_name":"com.wallet.service.WalletService","thread_name":"http-nio-8080-exec-2","message":"TRANSFER applied: tx=f3e5c75a…, …","requestId":"d7fd5c77…","app":"java-wallet"}
 ```
 
 ---

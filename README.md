@@ -15,6 +15,7 @@ The design priorities, in order, match the brief: **correctness first**
 - Spring Boot 3.2 (Spring Web + Spring Data JPA + Bean Validation)
 - H2 in-memory database (zero setup for the demo)
 - springdoc-openapi (Swagger UI / OpenAPI 3 docs)
+- SLF4J / Logback logging — readable console by default, structured JSON under the `prod` profile, with a per-request correlation id
 - JUnit 5 / AssertJ for tests
 - No Lombok (DTOs use Java `record`s instead)
 
@@ -132,6 +133,57 @@ Docs are generated automatically from the controllers and DTOs by
 
 ---
 
+## Security & configuration
+
+Every `/accounts` and `/transfers` endpoint is protected: the service is a
+stateless **OAuth 2.0 resource server**, so each request must carry a JWT bearer
+token. Get one from the built-in token endpoint (client-credentials grant), then
+send it as an `Authorization: Bearer <token>` header.
+
+```bash
+# 1. obtain a token (default demo credentials)
+TOKEN=$(curl -s -X POST http://localhost:8080/oauth/token \
+      -d grant_type=client_credentials \
+      -d client_id=demo-client -d client_secret=demo-secret \
+      | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+
+# 2. use it on a protected call
+curl -s http://localhost:8080/accounts/$A/balance -H "Authorization: Bearer $TOKEN"
+```
+
+**Scopes** are enforced per route:
+
+| Scope          | Grants                              |
+|----------------|-------------------------------------|
+| `wallet.write` | `POST /accounts`, `POST /transfers` |
+| `wallet.read`  | `GET /accounts/**`                  |
+
+A missing/expired token → `401`; a valid token without the required scope → `403`.
+Open paths (no token needed): `POST /oauth/token`, the Swagger/OpenAPI docs, and
+`/h2-console`.
+
+**Credentials & secrets.** The single demo client and token settings live under
+`wallet.security.*` in `application.properties`. The id and secret default to the
+demo values so the project runs with zero setup, but each can be overridden by an
+environment variable so a **real secret is never committed to source control**:
+
+| Property                        | Env override                    | Default       |
+|---------------------------------|---------------------------------|---------------|
+| `wallet.security.client-id`     | `WALLET_SECURITY_CLIENT_ID`     | `demo-client` |
+| `wallet.security.client-secret` | `WALLET_SECURITY_CLIENT_SECRET` | `demo-secret` |
+
+> The JWT signing key is generated in-memory at startup (RS256) and is **not**
+> shared across nodes. For a real multi-node deployment, delete `TokenController`
+> and point the resource server at an external Authorization Server via
+> `spring.security.oauth2.resourceserver.jwt.issuer-uri`.
+
+**Logging.** Readable console by default; set `SPRING_PROFILES_ACTIVE=prod` for
+structured one-JSON-object-per-line output. Either way every request is assigned
+an `X-Request-Id` correlation id that appears on each log line and is echoed back
+on the response header.
+
+---
+
 ## Testing
 
 Four ways to exercise the service, from the quickest sanity check to a full
@@ -220,6 +272,10 @@ Money is always `BigDecimal`, never floating point.
 
 Base URL: `http://localhost:8080`
 
+> Every endpoint below requires an `Authorization: Bearer <token>` header
+> (`wallet.write` scope for `POST`, `wallet.read` for `GET`). See
+> [Security & configuration](#security--configuration) for how to get a token.
+
 ### 1. Create an account
 
 ```
@@ -293,6 +349,8 @@ All errors return a consistent body:
 | Insufficient funds                          | 422    |
 | Currency mismatch                           | 422    |
 | Idempotency key reused with different params| 409    |
+| Missing / expired / invalid bearer token    | 401    |
+| Valid token without the required scope      | 403    |
 
 ---
 
@@ -301,26 +359,33 @@ All errors return a consistent body:
 ```bash
 BASE=http://localhost:8080
 
+# 0. obtain an OAuth2 token and reuse it as a bearer header on every call
+TOKEN=$(curl -s -X POST $BASE/oauth/token \
+      -d grant_type=client_credentials \
+      -d client_id=demo-client -d client_secret=demo-secret \
+      | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+AUTH="Authorization: Bearer $TOKEN"
+
 # create two EUR accounts (capture the ids)
-A=$(curl -s -X POST $BASE/accounts -H 'Content-Type: application/json' \
+A=$(curl -s -X POST $BASE/accounts -H "$AUTH" -H 'Content-Type: application/json' \
       -d '{"currency":"EUR"}' | sed -E 's/.*"id":"([^"]+)".*/\1/')
-B=$(curl -s -X POST $BASE/accounts -H 'Content-Type: application/json' \
+B=$(curl -s -X POST $BASE/accounts -H "$AUTH" -H 'Content-Type: application/json' \
       -d '{"currency":"EUR"}' | sed -E 's/.*"id":"([^"]+)".*/\1/')
 
 # deposit 100 into A
-curl -s -X POST $BASE/transfers -H 'Content-Type: application/json' \
+curl -s -X POST $BASE/transfers -H "$AUTH" -H 'Content-Type: application/json' \
   -d "{\"toAccountId\":\"$A\",\"amount\":100.00,\"currency\":\"EUR\"}"
 
 # transfer 30 from A to B
-curl -s -X POST $BASE/transfers -H 'Content-Type: application/json' \
+curl -s -X POST $BASE/transfers -H "$AUTH" -H 'Content-Type: application/json' \
   -d "{\"fromAccountId\":\"$A\",\"toAccountId\":\"$B\",\"amount\":30.00,\"currency\":\"EUR\"}"
 
 # balances: A=70, B=30
-curl -s $BASE/accounts/$A/balance
-curl -s $BASE/accounts/$B/balance
+curl -s $BASE/accounts/$A/balance -H "$AUTH"
+curl -s $BASE/accounts/$B/balance -H "$AUTH"
 
 # A's ledger
-curl -s $BASE/accounts/$A/transactions
+curl -s $BASE/accounts/$A/transactions -H "$AUTH"
 ```
 
 A ready-to-run version of this is in [`demo.sh`](demo.sh).
@@ -386,7 +451,12 @@ counterpart:
 - **Single currency per account, no FX.** Cross-currency transfers are rejected.
   A real system would add an exchange-rate service and a currency-conversion
   transaction type.
-- **No authentication / authorization.** Out of scope for the exercise.
+- **Authentication, but not per-resource authorization.** Calls are gated by
+  OAuth2 JWT scopes (`wallet.read` / `wallet.write`), and the demo client secret
+  is overridable by env var — but tokens are minted in-process by a single static
+  client and any valid token may act on *any* account. A real system would
+  delegate to an external Authorization Server and add a per-account ownership
+  model so a caller can only touch its own accounts.
 - **Deposits/withdrawals are single-sided.** A fully closed double-entry system
   would post the contra-entry to an external/clearing account so the books sum
   to zero system-wide; here that contra side is implicit.
@@ -396,5 +466,5 @@ counterpart:
 
 ## Possible next steps
 
-Pagination on the transactions endpoint, OpenAPI/Swagger docs, Testcontainers
-running the tests against real PostgreSQL, and structured request logging.
+Pagination on the transactions endpoint, OpenAPI/Swagger docs, and Testcontainers
+running the tests against real PostgreSQL.

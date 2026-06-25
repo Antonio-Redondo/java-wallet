@@ -60,6 +60,15 @@
             <version>2.5.0</version>
         </dependency>
 
+        <!-- Structured (JSON) logging encoder for Logback. Used by the `prod`
+             logging profile so each log line is one JSON object that ships
+             cleanly into a log aggregator (ELK / Loki / CloudWatch). -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

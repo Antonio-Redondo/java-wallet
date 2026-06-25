@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logging configuration.
+
+  Two output formats, selected by Spring profile:
+
+    * default (dev / demo) -> human-readable console, the same concise format as
+      before, with the per-request correlation id ([req=...]) added.
+    * prod                 -> one JSON object per line (logstash encoder), ready
+      to ship into ELK / Loki / CloudWatch. Activate by setting the active
+      profile to `prod` (e.g. SPRING_PROFILES_ACTIVE=prod).
+
+  Log LEVELS are still driven by application.properties (logging.level.*),
+  which Spring Boot applies on top of this file — e.g. com.wallet=DEBUG.
+
+  Both formats include the MDC key `requestId`, populated by
+  RequestCorrelationFilter, so every line of a request shares one id.
+-->
+<configuration>
+
+    <!-- Spring Boot's default conversion rules (colours, etc.). -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Human-readable console for dev / demo. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] [req=%X{requestId:-}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Structured JSON console for production. -->
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+            <customFields>{"app":"java-wallet"}</customFields>
+        </encoder>
+    </appender>
+
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+</configuration>
