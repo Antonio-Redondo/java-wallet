@@ -26,35 +26,35 @@ flowchart TD
     Client["HTTP Client<br/>curl · Postman · service"]
 
     subgraph SEC["Security"]
-        SFC["SecurityFilterChain<br/>OAuth2 resource server<br/>validates JWT · scope to route"]
+        SFC["SecurityFilterChain<br/>OAuth2 resource server · validates JWT"]
         TKC["TokenController<br/>/oauth/token · mints JWTs"]
     end
 
     subgraph WEB["Web / Controller"]
-        AC["AccountController<br/>/accounts"]
-        TRC["TransferController<br/>/transfers"]
+        AC["AccountController · /accounts"]
+        TRC["TransferController · /transfers"]
         GEH["GlobalExceptionHandler"]
     end
 
     subgraph SVC["Service"]
-        WS["WalletService<br/>@Transactional · bookkeeping<br/>locking · idempotency"]
+        WS["WalletService<br/>@Transactional · locking · idempotency"]
     end
 
     subgraph REPO["Repository"]
-        AR["AccountRepository<br/>findByIdForUpdate"]
-        TR["TransactionRepository<br/>findByIdempotencyKey"]
+        AR["AccountRepository · findByIdForUpdate"]
+        TR["TransactionRepository · findByIdempotencyKey"]
         LR["LedgerEntryRepository"]
     end
 
     subgraph DB["Database"]
-        T1[("accounts<br/>balance cached")]
-        T2[("transactions<br/>uk_idempotency")]
-        T3[("ledger_entries<br/>append-only · signed")]
+        T1[("accounts")]
+        T2[("transactions")]
+        T3[("ledger_entries")]
     end
 
-    Client -->|"JSON · Bearer jwt"| SEC
-    SEC -->|"authenticated<br/>SCOPE_wallet.read / write"| WEB
-    WEB -->|"validated DTO records"| SVC
+    Client -->|"JSON · Bearer JWT"| SEC
+    SEC -->|"authenticated · scopes"| WEB
+    WEB -->|"validated DTOs"| SVC
     SVC -->|"Spring Data JPA"| REPO
     REPO -->|"SELECT … FOR UPDATE"| DB
 
