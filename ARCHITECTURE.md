@@ -21,47 +21,39 @@ be observed**, even under heavy concurrency or across a cluster of nodes.
 The request path for a transfer, top to bottom. Each layer has one job and
 dependencies point strictly downward; concurrency control lives in the database.
 
-```mermaid
-flowchart TD
-    Client["HTTP Client<br/>curl · Postman · service"]
-
-    subgraph SEC["Security"]
-        SFC["SecurityFilterChain<br/>OAuth2 resource server · validates JWT"]
-        TKC["TokenController<br/>/oauth/token · mints JWTs"]
-    end
-
-    subgraph WEB["Web / Controller"]
-        AC["AccountController · /accounts"]
-        TRC["TransferController · /transfers"]
-        GEH["GlobalExceptionHandler"]
-    end
-
-    subgraph SVC["Service"]
-        WS["WalletService<br/>@Transactional · locking · idempotency"]
-    end
-
-    subgraph REPO["Repository"]
-        AR["AccountRepository · findByIdForUpdate"]
-        TR["TransactionRepository · findByIdempotencyKey"]
-        LR["LedgerEntryRepository"]
-    end
-
-    subgraph DB["Database"]
-        T1[("accounts")]
-        T2[("transactions")]
-        T3[("ledger_entries")]
-    end
-
-    Client -->|"JSON · Bearer JWT"| SEC
-    SEC -->|"authenticated · scopes"| WEB
-    WEB -->|"validated DTOs"| SVC
-    SVC -->|"Spring Data JPA"| REPO
-    REPO -->|"SELECT … FOR UPDATE"| DB
-
-    classDef layer fill:#ffffff,stroke:#d0d7de,color:#1f2328;
-    classDef store fill:#eef1f5,stroke:#8250df,color:#1f2328;
-    class Client,SFC,TKC,AC,TRC,GEH,WS,AR,TR,LR layer;
-    class T1,T2,T3 store;
+```
+┌─ CLIENT ───────────────────────────────────────────────────────┐
+│  HTTP client · curl · Postman · service                        │
+└────────────────────────────────────────────────────────────────┘
+                                │  JSON over HTTP · Authorization: Bearer <jwt>
+                                ▼
+┌─ SECURITY ─────────────────────────────────────────────────────┐
+│  SecurityFilterChain · OAuth2 resource server · validates JWT  │
+│  TokenController · /oauth/token · mints JWTs · scope→route     │
+└────────────────────────────────────────────────────────────────┘
+                                │  authenticated · SCOPE_wallet.read / SCOPE_wallet.write
+                                ▼
+┌─ WEB / CONTROLLER ─────────────────────────────────────────────┐
+│  AccountController /accounts · TransferController /transfers   │
+│  GlobalExceptionHandler · @RestControllerAdvice                │
+└────────────────────────────────────────────────────────────────┘
+                                │  validated DTO records (TransferRequest, CreateAccountRequest)
+                                ▼
+┌─ SERVICE ──────────────────────────────────────────────────────┐
+│  WalletService · @Transactional · locking · idempotency        │
+└────────────────────────────────────────────────────────────────┘
+                                │  Spring Data repositories
+                                ▼
+┌─ REPOSITORY ───────────────────────────────────────────────────┐
+│  AccountRepository · findByIdForUpdate                         │
+│  TransactionRepository · LedgerEntryRepository                 │
+└────────────────────────────────────────────────────────────────┘
+                                │  JPA / Hibernate · SELECT … FOR UPDATE
+                                ▼
+┌─ DATABASE ─────────────────────────────────────────────────────┐
+│  accounts (cached balance) · transactions (uk_idempotency)     │
+│  ledger_entries (append-only, signed)                          │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
