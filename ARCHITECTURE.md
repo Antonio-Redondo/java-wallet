@@ -16,8 +16,59 @@ be observed**, even under heavy concurrency or across a cluster of nodes.
 
 ---
 
+## Architecture at a glance
+
+The request path for a transfer, top to bottom. Each layer has one job and
+dependencies point strictly downward; concurrency control lives in the database.
+
+```mermaid
+flowchart TD
+    Client["HTTP Client<br/>curl · Postman · service"]
+
+    subgraph SEC["Security"]
+        SFC["SecurityFilterChain<br/>OAuth2 resource server<br/>validates JWT · scope to route"]
+        TKC["TokenController<br/>/oauth/token · mints JWTs"]
+    end
+
+    subgraph WEB["Web / Controller"]
+        AC["AccountController<br/>/accounts"]
+        TRC["TransferController<br/>/transfers"]
+        GEH["GlobalExceptionHandler"]
+    end
+
+    subgraph SVC["Service"]
+        WS["WalletService<br/>@Transactional · bookkeeping<br/>locking · idempotency"]
+    end
+
+    subgraph REPO["Repository"]
+        AR["AccountRepository<br/>findByIdForUpdate"]
+        TR["TransactionRepository<br/>findByIdempotencyKey"]
+        LR["LedgerEntryRepository"]
+    end
+
+    subgraph DB["Database"]
+        T1[("accounts<br/>balance cached")]
+        T2[("transactions<br/>uk_idempotency")]
+        T3[("ledger_entries<br/>append-only · signed")]
+    end
+
+    Client -->|"JSON · Bearer jwt"| SEC
+    SEC -->|"authenticated<br/>SCOPE_wallet.read / write"| WEB
+    WEB -->|"validated DTO records"| SVC
+    SVC -->|"Spring Data JPA"| REPO
+    REPO -->|"SELECT … FOR UPDATE"| DB
+
+    classDef layer fill:#ffffff,stroke:#d0d7de,color:#1f2328;
+    classDef store fill:#eef1f5,stroke:#8250df,color:#1f2328;
+    class Client,SFC,TKC,AC,TRC,GEH,WS,AR,TR,LR layer;
+    class T1,T2,T3 store;
+```
+
+---
+
 ## Contents
 
+- [Architecture at a glance](#architecture-at-a-glance)
 - [Overview](#overview)
 - [Layered architecture](#layered-architecture)
 - [Data model](#data-model)
@@ -58,32 +109,10 @@ that is always kept in lock-step inside the same database transaction.
 
 ## Layered architecture
 
-A conventional, deliberately boring Spring layering. Each layer has one job;
-dependencies point strictly downward. The path below shows the request flow for
-a transfer.
-
-```
-Client          HTTP client (curl · Postman · service)
-   │  JSON over HTTP · Authorization: Bearer <jwt>
-   ▼
-Security        SecurityFilterChain (OAuth2 resource server · validates JWT · scope→route rules)
-                TokenController (/oauth/token · mints JWTs)
-   │  authenticated request (SCOPE_wallet.read / SCOPE_wallet.write)
-   ▼
-Web             AccountController (/accounts) · TransferController (/transfers)
-                GlobalExceptionHandler (@RestControllerAdvice)
-   │  validated DTO records (TransferRequest, CreateAccountRequest)
-   ▼
-Service         WalletService (@Transactional · all bookkeeping rules · locking · idempotency)
-   │  Spring Data repositories
-   ▼
-Data            AccountRepository (findByIdForUpdate) · TransactionRepository (findByIdempotencyKey)
-                LedgerEntryRepository (findByAccountId…)
-   │  JPA / Hibernate · SELECT … FOR UPDATE
-   ▼
-DB              accounts (balance cached) · transactions (headers + uk_idempotency)
-                ledger_entries (append-only, signed)
-```
+A conventional, deliberately boring Spring layering. Each layer has one job and
+dependencies point strictly downward — see the
+[diagram above](#architecture-at-a-glance) for the request flow. The table below
+details each layer's responsibility.
 
 | Layer | Responsibility | Key types |
 |-------|----------------|-----------|
