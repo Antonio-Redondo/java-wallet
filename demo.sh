@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 #
 # End-to-end demo of the wallet API using only curl + sed.
-# Start the server first:  mvn spring-boot:run
+#
+# Start the server first (it needs a PostgreSQL; see README for the docker run):
+#   bash / macOS / Linux:
+#     WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet mvn spring-boot:run
+#   Windows PowerShell:
+#     $env:WALLET_DB_URL="jdbc:postgresql://localhost:5432/wallet"; $env:WALLET_DB_USERNAME="wallet"; $env:WALLET_DB_PASSWORD="wallet"; mvn spring-boot:run
 #
 # The API is OAuth2-protected, so this first fetches a JWT from /oauth/token
 # (client-credentials grant) and sends it as a Bearer token on every call.

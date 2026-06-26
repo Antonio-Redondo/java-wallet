@@ -130,6 +130,7 @@ WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet 
 ```
 
 ```powershell
+# Windows PowerShell
 $env:WALLET_DB_URL="jdbc:postgresql://localhost:5432/wallet"; $env:WALLET_DB_USERNAME="wallet"; $env:WALLET_DB_PASSWORD="wallet"; mvn spring-boot:run
 ```
 
