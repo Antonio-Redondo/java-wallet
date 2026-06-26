@@ -13,21 +13,26 @@ The design priorities, in order, match the brief: **correctness first**
 
 - Java 17+ (compiled for 17; runs on 17, 21, …)
 - Spring Boot 3.2 (Spring Web + Spring Data JPA + Bean Validation)
-- H2 in-memory database for the zero-setup demo; **PostgreSQL + Flyway** for the
-  durable / clustered `postgres` profile
+- **PostgreSQL** as the datastore, with **Flyway** schema migrations (the
+  `postgres` profile); an in-memory H2 is used for the quick demo and tests
 - springdoc-openapi (Swagger UI / OpenAPI 3 docs)
 - SLF4J / Logback logging — readable console by default, structured JSON under the `prod` profile, with a per-request correlation id
 - JUnit 5 / AssertJ for tests
-- No Lombok (DTOs use Java `record`s instead)
 
 ---
 
 ## Prerequisites — install everything from scratch
 
-You only need **two** tools: a **JDK (Java 17 or newer)** and **Apache Maven**.
-Maven itself runs on Java, so install the JDK first. Pick your OS below; every
-command can be copy-pasted as-is, and there is a verification step at the end so
-you know it worked before building.
+You need a **JDK (Java 17 or newer)** and **Apache Maven** to build and run the
+service. To run it against PostgreSQL (the `postgres` profile) or to run the
+cluster test, you also need **Docker** — the quickest way to get a local
+Postgres. Maven itself runs on Java, so install the JDK first. Pick your OS
+below; every command can be copy-pasted as-is, and there is a verification step
+at the end so you know it worked before building.
+
+> **Docker** (optional, for the PostgreSQL path): install
+> [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/macOS)
+> or Docker Engine (Linux), and confirm it runs with `docker version`.
 
 ### Windows 10 / 11 (verified, step by step)
 
@@ -103,9 +108,6 @@ open a fresh one (Windows), or re-run the install (macOS/Linux).
 With the prerequisites above installed and verified:
 
 ```bash
-# run the server (starts on http://localhost:8080)
-mvn spring-boot:run
-
 # run the test suite (includes the concurrency test)
 mvn test
 
@@ -113,6 +115,33 @@ mvn test
 mvn clean package
 java -jar target/java-wallet-1.0.0.jar
 ```
+
+**Option A — quick demo (no database setup).** Runs on an in-memory H2 database,
+so a brand-new user can start the server with a single command:
+
+```bash
+mvn spring-boot:run        # starts on http://localhost:8080
+```
+
+**Option B — run against PostgreSQL (durable / cluster-ready).** Start a local
+Postgres with Docker, then launch with the `postgres` profile. Flyway creates the
+schema on first boot.
+
+```bash
+# 1. start a local Postgres (port 5432; use another port if 5432 is taken)
+docker run -d --name wallet-pg -p 5432:5432 -e POSTGRES_DB=wallet -e POSTGRES_USER=wallet -e POSTGRES_PASSWORD=wallet postgres:16-alpine
+
+# 2. run the app against it (bash/macOS/Linux)
+SPRING_PROFILES_ACTIVE=postgres WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet mvn spring-boot:run
+```
+
+```powershell
+# step 2 on Windows PowerShell (set env vars first, then run)
+$env:SPRING_PROFILES_ACTIVE="postgres"; $env:WALLET_DB_URL="jdbc:postgresql://localhost:5432/wallet"; $env:WALLET_DB_USERNAME="wallet"; $env:WALLET_DB_PASSWORD="wallet"; mvn spring-boot:run
+```
+
+See [Running on PostgreSQL / as a cluster](#running-on-postgresql--as-a-cluster)
+for running multiple nodes against one shared database.
 
 > The first `mvn` command downloads all dependencies from Maven Central and may
 > take a few minutes; subsequent runs use the local cache and are fast. An
@@ -517,9 +546,3 @@ counterpart:
 - **`balance` is a cached column.** It is always kept consistent with the ledger
   inside the same locked transaction; the ledger remains the source of truth and
   the balance could be recomputed from it at any time.
-
-## Possible next steps
-
-Pagination on the transactions endpoint, per-account authorization (ownership),
-an external Authorization Server so JWT keys are shared across nodes, and
-operational endpoints (health/metrics via Actuator).
