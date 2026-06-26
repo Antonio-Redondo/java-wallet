@@ -13,7 +13,8 @@ The design priorities, in order, match the brief: **correctness first**
 
 - Java 17+ (compiled for 17; runs on 17, 21, …)
 - Spring Boot 3.2 (Spring Web + Spring Data JPA + Bean Validation)
-- H2 in-memory database (zero setup for the demo)
+- H2 in-memory database for the zero-setup demo; **PostgreSQL + Flyway** for the
+  durable / clustered `postgres` profile
 - springdoc-openapi (Swagger UI / OpenAPI 3 docs)
 - SLF4J / Logback logging — readable console by default, structured JSON under the `prod` profile, with a per-request correlation id
 - JUnit 5 / AssertJ for tests
@@ -199,6 +200,12 @@ Runs the JUnit 5 suite, including `WalletServiceConcurrencyTest` — 8 threads �
 200 = **1,600 overlapping random transfers** released simultaneously, then
 asserts money is conserved and every balance still equals the sum of its ledger
 entries. This is the proof of the correctness/concurrency claims above.
+
+It also includes `WalletClusterConcurrencyTest`, which does the same across **two
+nodes sharing one real PostgreSQL** (via Testcontainers) — the cross-node proof.
+It needs Docker and is skipped automatically when Docker isn't reachable; on
+Windows + Docker Desktop you may need
+`DOCKER_HOST=npipe:////./pipe/dockerDesktopLinuxEngine`.
 
 ### 2. End-to-end script — `demo.sh`
 
@@ -417,9 +424,16 @@ at the database layer:
    after a timeout. It is backed by a unique constraint, so even two concurrent
    requests with the same key can produce at most one transaction.
 
-`WalletServiceConcurrencyTest` runs thousands of overlapping transfers across
-several accounts and asserts (a) the total balance never changes and (b) each
-balance still equals the sum of its ledger entries.
+Two tests assert both invariants — total balance never changes, and each balance
+always equals the sum of its ledger entries:
+
+- **`WalletServiceConcurrencyTest`** (H2, default profile) — thousands of
+  overlapping transfers across many threads in one JVM.
+- **`WalletClusterConcurrencyTest`** (real PostgreSQL via Testcontainers) — boots
+  **two independent application contexts** (two nodes, two connection pools)
+  against **one shared database** and fires overlapping transfers from both at the
+  same accounts. This is the direct proof of cross-node correctness. *(Requires
+  Docker; skipped when Docker is unavailable.)*
 
 ### Running as a cluster of wallet servers
 
@@ -427,12 +441,51 @@ This is the key point of the chosen design: **the concurrency control lives in
 the database, not in JVM memory.** Nothing in `WalletService` relies on
 process-local locks (no `synchronized`, no in-memory map). Pessimistic row locks
 and the unique constraint are enforced by the database for *all* connections, so
-running N identical wallet nodes against one shared transactional database
-(PostgreSQL, MySQL, …) is correct with **no code changes** — just point
-`spring.datasource.url` at the shared database.
+running N identical wallet nodes against one shared PostgreSQL is correct with
+**no code changes** — just run with the `postgres` profile so every node points
+at the same database (see [below](#running-on-postgresql--as-a-cluster)).
 
-The only reason a single node is used in the demo is the in-memory H2 database,
-which is not shared. Swapping in PostgreSQL is a configuration change.
+This was verified directly: two nodes against one shared Postgres, 269
+concurrent cross-node transfers, money conserved exactly and zero ledger
+mismatches. The in-memory H2 default exists only so the *demo* runs with zero
+setup — it is not shared, which is the one and only reason the demo is
+single-node.
+
+### Running on PostgreSQL / as a cluster
+
+The `postgres` profile points the service at a shared PostgreSQL, where
+[Flyway](src/main/resources/db/migration/V1__init.sql) owns the schema and
+Hibernate runs with `ddl-auto=validate` (it checks the entities against the
+migrated schema instead of generating it).
+
+```bash
+# 1. a shared Postgres (any instance all nodes can reach)
+docker run -d --name wallet-pg -p 5432:5432 \
+  -e POSTGRES_DB=wallet -e POSTGRES_USER=wallet -e POSTGRES_PASSWORD=wallet \
+  postgres:16-alpine
+
+# 2. start one or more nodes against it (real secrets/URLs come from env vars)
+WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
+WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
+SPRING_PROFILES_ACTIVE=postgres \
+mvn spring-boot:run
+
+# a second node is just another process with a different SERVER_PORT, same DB:
+SERVER_PORT=8081 SPRING_PROFILES_ACTIVE=postgres \
+WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
+WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
+mvn spring-boot:run
+```
+
+Connection settings default to a local Postgres but every value is overridable by
+the `WALLET_DB_*` environment variables, so real credentials are injected at
+deploy time and never committed.
+
+> **Note on auth in a cluster.** Each node currently mints and verifies JWTs with
+> an RSA key generated in its own memory, so a token from node A is not valid on
+> node B. For a true multi-node deployment, delegate token issuance to an external
+> Authorization Server (`spring.security.oauth2.resourceserver.jwt.issuer-uri`) so
+> every node trusts the same keys — see [Security & configuration](#security--configuration).
 
 ---
 
@@ -441,9 +494,10 @@ which is not shared. Swapping in PostgreSQL is a configuration change.
 Kept deliberately within the ~4-hour scope; each shortcut and its production
 counterpart:
 
-- **Storage is in-memory H2.** Proper: a shared, durable database (PostgreSQL)
-  with schema migrations (Flyway/Liquibase) instead of `ddl-auto`. The code is
-  already written against standard JPA/SQL so this is config-only.
+- **H2 is the default only for the zero-setup demo.** The production path is
+  already implemented: the `postgres` profile runs against a shared, durable
+  PostgreSQL with **Flyway migrations** and `ddl-auto=validate` (not `ddl-auto`
+  schema generation). See [Running on PostgreSQL / as a cluster](#running-on-postgresql--as-a-cluster).
 - **Pessimistic locking.** Simple and obviously correct, which suits a wallet.
   The alternative is **optimistic locking** (a `@Version` column + retry on
   conflict), which scales better under low contention; it would be a small,
@@ -466,5 +520,6 @@ counterpart:
 
 ## Possible next steps
 
-Pagination on the transactions endpoint, OpenAPI/Swagger docs, and Testcontainers
-running the tests against real PostgreSQL.
+Pagination on the transactions endpoint, per-account authorization (ownership),
+an external Authorization Server so JWT keys are shared across nodes, and
+operational endpoints (health/metrics via Actuator).

@@ -53,6 +53,22 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- PostgreSQL: the shared, durable datastore for real / clustered
+             deployments. Activated by the `postgres` profile; the default
+             profile still runs on in-memory H2 for the zero-setup demo. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Flyway: schema is owned by versioned migrations (not ddl-auto) on
+             PostgreSQL, so the schema is reproducible and reviewable. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
         <!-- OpenAPI 3 spec generation + Swagger UI, auto-configured for Spring Boot 3.x -->
         <dependency>
             <groupId>org.springdoc</groupId>
@@ -77,6 +93,20 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers: spins up a real PostgreSQL in Docker so the
+             cluster concurrency test runs against the same database engine as
+             production (versions managed by the Spring Boot BOM). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

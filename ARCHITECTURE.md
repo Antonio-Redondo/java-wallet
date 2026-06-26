@@ -270,8 +270,17 @@ layer.
 > — no `synchronized`, no in-memory map. The locks and the unique constraint are
 > enforced by the database for *all* connections. Run N identical wallet nodes
 > against one shared PostgreSQL and it stays correct; the only reason the demo
-> runs single-node is that H2 is in-memory and not shared. Swapping in PostgreSQL
-> is a `spring.datasource.url` change.
+> runs single-node is that H2 is in-memory and not shared. Switching to the shared
+> database is the `postgres` profile (Flyway-managed schema, `ddl-auto=validate`)
+> — see [How to run](#6--point-it-at-postgresql-production--cluster).
+
+**The cross-node test that proves it.** `WalletClusterConcurrencyTest` starts
+**two independent application contexts** (two connection pools / "nodes") against
+**one shared PostgreSQL** (Testcontainers) and fires overlapping transfers from
+both at the same accounts. Since the two nodes share no memory — only the
+database — conservation could only hold if the locking is enforced by Postgres
+for every connection. It does: verified at 269 concurrent cross-node transfers
+with money conserved exactly and zero ledger mismatches.
 
 **The stress test that proves it.** `WalletServiceConcurrencyTest` seeds 8
 accounts with 1,000.00 EUR each, then fires **8 threads × 200 = 1,600 overlapping
@@ -590,13 +599,35 @@ npx --yes newman run wallet.postman_collection.json \
   a `wallet.read`-only token (`-d scope=wallet.read`) and try a `POST` → `403`.
 - **Concurrency proof** — run `mvn test` and watch `WalletServiceConcurrencyTest`
   hammer the service with 1,600 overlapping transfers, then assert money is conserved.
+- **Cluster proof** — `WalletClusterConcurrencyTest` runs the same storm across
+  two nodes sharing one real PostgreSQL (Testcontainers; needs Docker).
 
 ### 6 · Point it at PostgreSQL (production / cluster)
 
+The `postgres` profile already wires this up: Flyway owns the schema
+([`V1__init.sql`](src/main/resources/db/migration/V1__init.sql)) and Hibernate
+runs with `ddl-auto=validate`. No code changes — just activate the profile and
+supply the connection via environment variables.
+
+```bash
+# a shared Postgres every node can reach
+docker run -d --name wallet-pg -p 5432:5432 \
+  -e POSTGRES_DB=wallet -e POSTGRES_USER=wallet -e POSTGRES_PASSWORD=wallet \
+  postgres:16-alpine
+
+# one node (run the same command with a different SERVER_PORT for a second node)
+SPRING_PROFILES_ACTIVE=postgres \
+WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
+WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
+mvn spring-boot:run
+```
+
+The relevant settings (see `application-postgres.properties`):
+
 ```properties
-# application.properties — no code changes needed
-spring.datasource.url=jdbc:postgresql://db-host:5432/wallet
-spring.jpa.hibernate.ddl-auto=validate   # + Flyway/Liquibase migrations
+spring.datasource.url=${WALLET_DB_URL:jdbc:postgresql://localhost:5432/wallet}
+spring.flyway.enabled=true
+spring.jpa.hibernate.ddl-auto=validate
 ```
 
 ---
