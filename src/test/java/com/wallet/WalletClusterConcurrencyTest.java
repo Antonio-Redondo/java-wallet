@@ -80,17 +80,21 @@ class WalletClusterConcurrencyTest {
     }
 
     private static ConfigurableApplicationContext startNode(String name) {
-        return new SpringApplicationBuilder(WalletApplication.class)
-                .properties(
-                        "spring.profiles.active=postgres",
-                        "spring.datasource.url=" + postgres.getJdbcUrl(),
-                        "spring.datasource.username=" + postgres.getUsername(),
-                        "spring.datasource.password=" + postgres.getPassword(),
-                        // Each node binds its own random HTTP port, like a real
-                        // pair of servers behind a load balancer.
-                        "server.port=0",
-                        "spring.application.name=" + name)
-                .run();
+        // Passed as command-line args (highest property precedence) so they
+        // override the application defaults AND any test-classpath properties —
+        // this node runs against the shared PostgreSQL with Flyway + validate,
+        // exactly like production.
+        return new SpringApplicationBuilder(WalletApplication.class).run(
+                "--spring.datasource.url=" + postgres.getJdbcUrl(),
+                "--spring.datasource.username=" + postgres.getUsername(),
+                "--spring.datasource.password=" + postgres.getPassword(),
+                "--spring.datasource.driver-class-name=org.postgresql.Driver",
+                "--spring.flyway.enabled=true",
+                "--spring.jpa.hibernate.ddl-auto=validate",
+                // Each node binds its own random HTTP port, like a real pair of
+                // servers behind a load balancer.
+                "--server.port=0",
+                "--spring.application.name=" + name);
     }
 
     @AfterAll

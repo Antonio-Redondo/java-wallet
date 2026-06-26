@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -87,6 +88,18 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining("; "));
         log.debug("Request validation failed: {}", details);
         return build(HttpStatus.BAD_REQUEST, details.isBlank() ? "Validation failed" : details);
+    }
+
+    /**
+     * Request to a path with no controller or static resource (e.g. a mistyped
+     * URL or a stray {@code /favicon.ico}). This is a client 404, not a server
+     * fault, so it is logged quietly and must not fall through to the catch-all
+     * below (which would log it at ERROR and return 500).
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException ex) {
+        log.debug("No resource for path: {}", ex.getResourcePath());
+        return build(HttpStatus.NOT_FOUND, "No such resource: " + ex.getResourcePath());
     }
 
     @ExceptionHandler(Exception.class)

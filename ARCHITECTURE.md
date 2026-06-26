@@ -6,7 +6,7 @@ be observed**, even under heavy concurrency or across a cluster of nodes.
 
 `Java 17` · `Spring Boot 3.2.5` · `Spring Web` · `Spring Data JPA` ·
 `Bean Validation` · `Spring Security · OAuth2 JWT` · `SLF4J logging` ·
-`springdoc / Swagger UI` · `H2 / PostgreSQL-ready` · `JUnit 5 · AssertJ` · `Maven`
+`springdoc / Swagger UI` · `PostgreSQL · Flyway` · `JUnit 5 · AssertJ` · `Maven`
 
 | Priority | Pillar | What it means |
 |----------|--------|---------------|
@@ -269,10 +269,9 @@ layer.
 > **Why this clusters with zero code changes.** Nothing relies on JVM-local state
 > — no `synchronized`, no in-memory map. The locks and the unique constraint are
 > enforced by the database for *all* connections. Run N identical wallet nodes
-> against one shared PostgreSQL and it stays correct; the only reason the demo
-> runs single-node is that H2 is in-memory and not shared. Switching to the shared
-> database is the `postgres` profile (Flyway-managed schema, `ddl-auto=validate`)
-> — see [How to run](#6--point-it-at-postgresql-production--cluster).
+> against one shared PostgreSQL and it stays correct — every node just points at
+> the same database (Flyway-managed schema, `ddl-auto=validate`); see
+> [How to run](#6--run-a-cluster-of-nodes).
 
 **The cross-node test that proves it.** `WalletClusterConcurrencyTest` starts
 **two independent application contexts** (two connection pools / "nodes") against
@@ -308,7 +307,6 @@ per route in `SecurityConfig`.
 **Open (unauthenticated) paths**
 - `POST /oauth/token` — get a token
 - `/swagger-ui/**`, `/v3/api-docs/**` — docs
-- `/h2-console/**` — dev DB console
 
 **How a request is authorised**
 
@@ -324,7 +322,7 @@ client ──(Authorization: Bearer <jwt>)──▶ POST /transfers
        ◀──────── 201 Created ────────────┘
 ```
 
-> **Self-contained by design.** To keep the project zero-setup, an RSA key pair is
+> **Self-contained by design.** To keep auth dependency-free, an RSA key pair is
 > generated *in memory at startup* and a single static demo client (`demo-client`
 > / `demo-secret`) is configured in `application.properties`. The id and secret
 > default to those demo values but each is overridable by an environment variable
@@ -491,16 +489,22 @@ Every error returns the same shape via `GlobalExceptionHandler`:
 
 ## How to run & use
 
-Requires JDK 17+ and Maven. Zero external setup — the demo runs on an in-memory
-H2 database.
+Requires JDK 17+, Maven, and a PostgreSQL database (the test suite needs neither
+— it uses an in-process H2).
 
 ### 1 · Build & run
 
 ```bash
-# run the server (http://localhost:8080)
+# 1. start a local PostgreSQL (Docker)
+docker run -d --name wallet-pg -p 5432:5432 \
+  -e POSTGRES_DB=wallet -e POSTGRES_USER=wallet -e POSTGRES_PASSWORD=wallet \
+  postgres:16-alpine
+
+# 2. run the server (http://localhost:8080). Flyway creates the schema on boot.
+#    WALLET_DB_* default to the values above, so this works as-is:
 mvn spring-boot:run
 
-# run the full test suite incl. the concurrency stress test
+# run the full test suite incl. the concurrency stress test (no database needed)
 mvn test
 
 # build and run a self-contained jar
@@ -508,8 +512,8 @@ mvn clean package
 java -jar target/java-wallet-1.0.0.jar
 ```
 
-> The H2 web console is at <http://localhost:8080/h2-console> — JDBC URL
-> `jdbc:h2:mem:wallet`, user `sa`, no password — if you want to peek at the tables.
+> To inspect the database, connect any PostgreSQL client (**pgAdmin** or `psql`)
+> to `localhost:5432`, database `wallet`, user/password `wallet`.
 
 ### 2 · Explore the API in the browser (Swagger UI)
 
@@ -602,12 +606,12 @@ npx --yes newman run wallet.postman_collection.json \
 - **Cluster proof** — `WalletClusterConcurrencyTest` runs the same storm across
   two nodes sharing one real PostgreSQL (Testcontainers; needs Docker).
 
-### 6 · Point it at PostgreSQL (production / cluster)
+### 6 · Run a cluster of nodes
 
-The `postgres` profile already wires this up: Flyway owns the schema
+The service always runs on PostgreSQL: Flyway owns the schema
 ([`V1__init.sql`](src/main/resources/db/migration/V1__init.sql)) and Hibernate
-runs with `ddl-auto=validate`. No code changes — just activate the profile and
-supply the connection via environment variables.
+runs with `ddl-auto=validate`. To run a cluster, point every node at the **same**
+database — no code or config changes, just a different `SERVER_PORT` per node.
 
 ```bash
 # a shared Postgres every node can reach
@@ -616,13 +620,12 @@ docker run -d --name wallet-pg -p 5432:5432 \
   postgres:16-alpine
 
 # one node (run the same command with a different SERVER_PORT for a second node)
-SPRING_PROFILES_ACTIVE=postgres \
 WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
 WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
 mvn spring-boot:run
 ```
 
-The relevant settings (see `application-postgres.properties`):
+The relevant settings (see `application.properties`):
 
 ```properties
 spring.datasource.url=${WALLET_DB_URL:jdbc:postgresql://localhost:5432/wallet}

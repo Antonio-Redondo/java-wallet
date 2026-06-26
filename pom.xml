@@ -47,19 +47,19 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-
-        <!-- PostgreSQL: the shared, durable datastore for real / clustered
-             deployments. Activated by the `postgres` profile; the default
-             profile still runs on in-memory H2 for the zero-setup demo. -->
+        <!-- PostgreSQL: the application's datastore in every environment. -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- H2 is used ONLY by the fast unit/concurrency tests (test profile),
+             so they run without Docker. The application itself never uses H2. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Flyway: schema is owned by versioned migrations (not ddl-auto) on

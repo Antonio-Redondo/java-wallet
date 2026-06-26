@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * If locking were missing or wrong, lost updates would break conservation.
  */
 @SpringBootTest
+@ActiveProfiles("test")
 class WalletServiceConcurrencyTest {
 
     private static final int ACCOUNTS = 8;

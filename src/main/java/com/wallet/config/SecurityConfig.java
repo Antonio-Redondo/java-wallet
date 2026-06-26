@@ -59,13 +59,12 @@ public class SecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
 
-    /** Endpoints that must stay open (token issuance, API docs, H2 console). */
+    /** Endpoints that must stay open (token issuance, API docs). */
     private static final String[] PUBLIC_PATHS = {
             "/oauth/token",
             "/v3/api-docs/**",
             "/swagger-ui/**",
-            "/swagger-ui.html",
-            "/h2-console/**"
+            "/swagger-ui.html"
     };
 
     @Bean
@@ -81,9 +80,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/accounts/**")
                         .hasAuthority("SCOPE_wallet.read")
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
-                // The H2 console renders inside a frame; allow same-origin framing.
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
 
         log.info("Security enabled: OAuth2 resource server (JWT). Public paths: {}",
                 String.join(", ", PUBLIC_PATHS));

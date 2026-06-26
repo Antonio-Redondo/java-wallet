@@ -13,8 +13,8 @@ The design priorities, in order, match the brief: **correctness first**
 
 - Java 17+ (compiled for 17; runs on 17, 21, …)
 - Spring Boot 3.2 (Spring Web + Spring Data JPA + Bean Validation)
-- **PostgreSQL** as the datastore, with **Flyway** schema migrations (the
-  `postgres` profile); an in-memory H2 is used for the quick demo and tests
+- **PostgreSQL** as the datastore, with **Flyway** schema migrations
+  (Hibernate runs with `ddl-auto=validate`); H2 is used only by the tests
 - springdoc-openapi (Swagger UI / OpenAPI 3 docs)
 - SLF4J / Logback logging — readable console by default, structured JSON under the `prod` profile, with a per-request correlation id
 - JUnit 5 / AssertJ for tests
@@ -23,14 +23,14 @@ The design priorities, in order, match the brief: **correctness first**
 
 ## Prerequisites — install everything from scratch
 
-You need a **JDK (Java 17 or newer)** and **Apache Maven** to build and run the
-service. To run it against PostgreSQL (the `postgres` profile) or to run the
-cluster test, you also need **Docker** — the quickest way to get a local
-Postgres. Maven itself runs on Java, so install the JDK first. Pick your OS
-below; every command can be copy-pasted as-is, and there is a verification step
-at the end so you know it worked before building.
+You need a **JDK (Java 17 or newer)** and **Apache Maven** to build the service,
+plus a **PostgreSQL** database to run it. The easiest way to get Postgres is
+**Docker**, so install that too (the test suite needs neither Postgres nor Docker
+— it uses an in-process database). Maven runs on Java, so install the JDK first.
+Pick your OS below; every command can be copy-pasted as-is, and there is a
+verification step at the end so you know it worked before building.
 
-> **Docker** (optional, for the PostgreSQL path): install
+> **Docker** (for running against PostgreSQL): install
 > [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/macOS)
 > or Docker Engine (Linux), and confirm it runs with `docker version`.
 
@@ -105,39 +105,39 @@ open a fresh one (Windows), or re-run the install (macOS/Linux).
 
 ## Build and run
 
-With the prerequisites above installed and verified:
+The application runs on PostgreSQL, so a new user needs a database. The quickest
+way is a local Postgres in Docker — the steps below take you from a clean
+checkout to a running server.
 
 ```bash
-# run the test suite (includes the concurrency test)
+# run the test suite — needs no database (the tests use an in-process H2)
 mvn test
-
-# build a runnable jar
-mvn clean package
-java -jar target/java-wallet-1.0.0.jar
 ```
 
-**Option A — quick demo (no database setup).** Runs on an in-memory H2 database,
-so a brand-new user can start the server with a single command:
+**1. Start a local PostgreSQL** (Docker; pick another host port if 5432 is taken):
 
 ```bash
-mvn spring-boot:run        # starts on http://localhost:8080
-```
-
-**Option B — run against PostgreSQL (durable / cluster-ready).** Start a local
-Postgres with Docker, then launch with the `postgres` profile. Flyway creates the
-schema on first boot.
-
-```bash
-# 1. start a local Postgres (port 5432; use another port if 5432 is taken)
 docker run -d --name wallet-pg -p 5432:5432 -e POSTGRES_DB=wallet -e POSTGRES_USER=wallet -e POSTGRES_PASSWORD=wallet postgres:16-alpine
+```
 
-# 2. run the app against it (bash/macOS/Linux)
-SPRING_PROFILES_ACTIVE=postgres WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet mvn spring-boot:run
+**2. Run the server** against it. Flyway creates the schema on first boot; the
+server starts on `http://localhost:8080`. The `WALLET_DB_*` values below are the
+defaults, so if your Postgres matches them you can just run `mvn spring-boot:run`.
+
+```bash
+# bash / macOS / Linux
+WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet mvn spring-boot:run
 ```
 
 ```powershell
-# step 2 on Windows PowerShell (set env vars first, then run)
-$env:SPRING_PROFILES_ACTIVE="postgres"; $env:WALLET_DB_URL="jdbc:postgresql://localhost:5432/wallet"; $env:WALLET_DB_USERNAME="wallet"; $env:WALLET_DB_PASSWORD="wallet"; mvn spring-boot:run
+$env:WALLET_DB_URL="jdbc:postgresql://localhost:5432/wallet"; $env:WALLET_DB_USERNAME="wallet"; $env:WALLET_DB_PASSWORD="wallet"; mvn spring-boot:run
+```
+
+**Build a runnable jar:**
+
+```bash
+mvn clean package
+WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet java -jar target/java-wallet-1.0.0.jar
 ```
 
 See [Running on PostgreSQL / as a cluster](#running-on-postgresql--as-a-cluster)
@@ -147,9 +147,8 @@ for running multiple nodes against one shared database.
 > take a few minutes; subsequent runs use the local cache and are fast. An
 > internet connection is required for that first build.
 
-> The H2 web console is available at `http://localhost:8080/h2-console`
-> (JDBC URL `jdbc:h2:mem:wallet`, user `sa`, no password) if you want to peek
-> at the tables.
+> To inspect the database, connect any PostgreSQL client (e.g. **pgAdmin** or
+> `psql`) to `localhost:5432`, database `wallet`, user/password `wallet`.
 
 ### Interactive API docs (Swagger)
 
@@ -189,8 +188,7 @@ curl -s http://localhost:8080/accounts/$A/balance -H "Authorization: Bearer $TOK
 | `wallet.read`  | `GET /accounts/**`                  |
 
 A missing/expired token → `401`; a valid token without the required scope → `403`.
-Open paths (no token needed): `POST /oauth/token`, the Swagger/OpenAPI docs, and
-`/h2-console`.
+Open paths (no token needed): `POST /oauth/token` and the Swagger/OpenAPI docs.
 
 **Credentials & secrets.** The single demo client and token settings live under
 `wallet.security.*` in `application.properties`. The id and secret default to the
@@ -456,8 +454,8 @@ at the database layer:
 Two tests assert both invariants — total balance never changes, and each balance
 always equals the sum of its ledger entries:
 
-- **`WalletServiceConcurrencyTest`** (H2, default profile) — thousands of
-  overlapping transfers across many threads in one JVM.
+- **`WalletServiceConcurrencyTest`** (in-process H2, `test` profile) — thousands
+  of overlapping transfers across many threads in one JVM.
 - **`WalletClusterConcurrencyTest`** (real PostgreSQL via Testcontainers) — boots
   **two independent application contexts** (two nodes, two connection pools)
   against **one shared database** and fires overlapping transfers from both at the
@@ -471,21 +469,20 @@ the database, not in JVM memory.** Nothing in `WalletService` relies on
 process-local locks (no `synchronized`, no in-memory map). Pessimistic row locks
 and the unique constraint are enforced by the database for *all* connections, so
 running N identical wallet nodes against one shared PostgreSQL is correct with
-**no code changes** — just run with the `postgres` profile so every node points
-at the same database (see [below](#running-on-postgresql--as-a-cluster)).
+**no code changes** — every node simply points at the same database (see
+[below](#running-on-postgresql--as-a-cluster)).
 
 This was verified directly: two nodes against one shared Postgres, 269
 concurrent cross-node transfers, money conserved exactly and zero ledger
-mismatches. The in-memory H2 default exists only so the *demo* runs with zero
-setup — it is not shared, which is the one and only reason the demo is
-single-node.
+mismatches.
 
 ### Running on PostgreSQL / as a cluster
 
-The `postgres` profile points the service at a shared PostgreSQL, where
+The service always runs on PostgreSQL, where
 [Flyway](src/main/resources/db/migration/V1__init.sql) owns the schema and
 Hibernate runs with `ddl-auto=validate` (it checks the entities against the
-migrated schema instead of generating it).
+migrated schema instead of generating it). To run a cluster, point every node at
+the **same** database:
 
 ```bash
 # 1. a shared Postgres (any instance all nodes can reach)
@@ -496,11 +493,10 @@ docker run -d --name wallet-pg -p 5432:5432 \
 # 2. start one or more nodes against it (real secrets/URLs come from env vars)
 WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
 WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
-SPRING_PROFILES_ACTIVE=postgres \
 mvn spring-boot:run
 
 # a second node is just another process with a different SERVER_PORT, same DB:
-SERVER_PORT=8081 SPRING_PROFILES_ACTIVE=postgres \
+SERVER_PORT=8081 \
 WALLET_DB_URL=jdbc:postgresql://localhost:5432/wallet \
 WALLET_DB_USERNAME=wallet WALLET_DB_PASSWORD=wallet \
 mvn spring-boot:run
@@ -523,10 +519,6 @@ deploy time and never committed.
 Kept deliberately within the ~4-hour scope; each shortcut and its production
 counterpart:
 
-- **H2 is the default only for the zero-setup demo.** The production path is
-  already implemented: the `postgres` profile runs against a shared, durable
-  PostgreSQL with **Flyway migrations** and `ddl-auto=validate` (not `ddl-auto`
-  schema generation). See [Running on PostgreSQL / as a cluster](#running-on-postgresql--as-a-cluster).
 - **Pessimistic locking.** Simple and obviously correct, which suits a wallet.
   The alternative is **optimistic locking** (a `@Version` column + retry on
   conflict), which scales better under low contention; it would be a small,
