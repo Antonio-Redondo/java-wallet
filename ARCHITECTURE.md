@@ -586,7 +586,7 @@ npx --yes newman run wallet.postman_collection.json \
   --env-var clientSecret=demo-secret
 ```
 
-- **CLI (newman):** a green run reports **9 requests / 6 assertions, 0 failures**.
+- **CLI (newman):** a green run reports **21 requests / 38 assertions, 0 failures** (9 happy-path + a 12-request **Negative scenarios** folder covering 401/403/422/409/400/404, asserting both status and error-body fields). The negative folder is self-contained and can be run on its own with `--folder "Negative scenarios"`.
 - **Postman app:** *Import* → `wallet.postman_collection.json` → open **Java Wallet API** → **Run**. Requests are ordered (token → accounts → transfers → balances), so use the Collection Runner rather than firing them out of order.
 
 > Because the idempotency key is regenerated per run, the collection is safely

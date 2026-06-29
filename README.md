@@ -251,8 +251,11 @@ idempotent replay does not move money twice).
 
 ### 3. Postman collection — `wallet.postman_collection.json`
 
-The collection drives the same flow as `demo.sh` with assertions on each step.
-It is **self-contained**: the access token, the two account ids, and a per-run
+The collection drives the same happy-path flow as `demo.sh` with assertions on
+each step, plus a **Negative scenarios** folder that asserts the failure paths
+(401 no/invalid token, 403 wrong scope, 422 insufficient funds, 422 currency
+mismatch, 409 idempotency conflict, 400 validation errors, 404 not found). It is
+**self-contained**: the access token, the two account ids, and a per-run
 idempotency key are all captured into collection variables by test scripts, so
 there is nothing to fill in by hand.
 
@@ -268,7 +271,9 @@ npx --yes newman run wallet.postman_collection.json \
   --env-var clientSecret=demo-secret
 ```
 
-A green run reports **9 requests / 6 assertions, 0 failures**.
+A green run reports **21 requests / 38 assertions, 0 failures** (9 happy-path + 12 negative).
+The **Negative scenarios** folder is self-contained — it can also be run on its own:
+`npx newman run wallet.postman_collection.json --folder "Negative scenarios"`.
 
 **Or run it in the Postman desktop app:** *Import* → select
 `wallet.postman_collection.json` → open the **Java Wallet API** collection →

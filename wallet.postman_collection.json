@@ -244,6 +244,391 @@
           "path": ["accounts", "{{accountA}}", "transactions"]
         }
       }
+    },
+    {
+      "name": "Negative scenarios",
+      "description": "Failure-path tests covering auth, validation, business rules and idempotency. Self-contained: a folder-level pre-request guarantees a token, accounts A/B and a baseline transaction exist, so the folder also runs on its own (e.g. `newman run wallet.postman_collection.json --folder \"Negative scenarios\"`).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Ensure the prerequisites these tests need are present, whether the folder",
+              "// runs after the happy path or entirely on its own: a valid token, accounts",
+              "// A and B, and a baseline transaction whose idempotency key the 409 test reuses.",
+              "const base = pm.collectionVariables.get('baseUrl');",
+              "const auth = () => 'Bearer ' + pm.collectionVariables.get('accessToken');",
+              "function postForm(path, form, cb){ pm.sendRequest({ url: base + path, method: 'POST', header: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: { mode: 'urlencoded', urlencoded: form } }, cb); }",
+              "function postJson(path, raw, cb){ pm.sendRequest({ url: base + path, method: 'POST', header: { 'Content-Type': 'application/json', 'Authorization': auth() }, body: { mode: 'raw', raw: raw } }, cb); }",
+              "function ensureToken(cb){ if (pm.collectionVariables.get('accessToken')) return cb(); postForm('/oauth/token', [ { key: 'grant_type', value: 'client_credentials' }, { key: 'client_id', value: pm.collectionVariables.get('clientId') }, { key: 'client_secret', value: pm.collectionVariables.get('clientSecret') } ], (e, r) => { if (!e && r.code === 200) pm.collectionVariables.set('accessToken', r.json().access_token); cb(); }); }",
+              "function ensureAccount(name, cb){ if (pm.collectionVariables.get(name)) return cb(false); postJson('/accounts', '{\"currency\":\"EUR\"}', (e, r) => { if (!e && r.code === 201) pm.collectionVariables.set(name, r.json().id); cb(true); }); }",
+              "ensureToken(() => ensureAccount('accountA', (createdA) => ensureAccount('accountB', (createdB) => {",
+              "  if (!(createdA || createdB || !pm.collectionVariables.get('idempotencyKey'))) return;",
+              "  const key = 'neg-' + Date.now();",
+              "  pm.collectionVariables.set('idempotencyKey', key);",
+              "  const A = pm.collectionVariables.get('accountA'), B = pm.collectionVariables.get('accountB');",
+              "  postJson('/transfers', JSON.stringify({ toAccountId: A, amount: 100.00, currency: 'EUR' }), () => {",
+              "    postJson('/transfers', JSON.stringify({ idempotencyKey: key, fromAccountId: A, toAccountId: B, amount: 30.00, currency: 'EUR' }), () => {});",
+              "  });",
+              "})));"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "No token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401 (no bearer token)', () => pm.response.to.have.status(401));",
+                  "pm.test('challenges with a WWW-Authenticate header', () => pm.expect(pm.response.headers.has('WWW-Authenticate')).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounts", "{{accountA}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Invalid token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401 (garbage token)', () => pm.response.to.have.status(401));",
+                  "pm.test('WWW-Authenticate reports invalid_token', () => pm.expect(String(pm.response.headers.get('WWW-Authenticate'))).to.include('invalid_token'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "not-a-valid-jwt", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/{{accountA}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounts", "{{accountA}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Get read-only token (scope=wallet.read)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('granted scope is wallet.read only', () => pm.expect(body.scope).to.eql('wallet.read'));",
+                  "pm.collectionVariables.set('readOnlyToken', body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials" },
+                { "key": "client_id", "value": "{{clientId}}" },
+                { "key": "client_secret", "value": "{{clientSecret}}" },
+                { "key": "scope", "value": "wallet.read" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/oauth/token",
+              "host": ["{{baseUrl}}"],
+              "path": ["oauth", "token"]
+            }
+          }
+        },
+        {
+          "name": "Read-only token cannot POST -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403 (missing wallet.write scope)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{readOnlyToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"toAccountId\":\"{{accountA}}\",\"amount\":10.00,\"currency\":\"EUR\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Insufficient funds -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 422 / Unprocessable Entity', () => { pm.expect(b.status).to.eql(422); pm.expect(b.error).to.eql('Unprocessable Entity'); });",
+                  "pm.test('message mentions insufficient funds', () => pm.expect(String(b.message).toLowerCase()).to.include('insufficient'));",
+                  "pm.test('error body carries a timestamp', () => pm.expect(b).to.have.property('timestamp'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountB}}\",\"amount\":1000000.00,\"currency\":\"EUR\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Currency mismatch -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422 (USD on EUR accounts)', () => pm.response.to.have.status(422));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 422 / Unprocessable Entity', () => { pm.expect(b.status).to.eql(422); pm.expect(b.error).to.eql('Unprocessable Entity'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountB}}\",\"amount\":1.00,\"currency\":\"USD\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Idempotency conflict (same key, different amount) -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 409 / Conflict', () => { pm.expect(b.status).to.eql(409); pm.expect(b.error).to.eql('Conflict'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"idempotencyKey\":\"{{idempotencyKey}}\",\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountB}}\",\"amount\":31.00,\"currency\":\"EUR\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Amount must be > 0 -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 400 / Bad Request', () => { pm.expect(b.status).to.eql(400); pm.expect(b.error).to.eql('Bad Request'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"toAccountId\":\"{{accountA}}\",\"amount\":0,\"currency\":\"EUR\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Missing currency -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 400 / Bad Request', () => { pm.expect(b.status).to.eql(400); pm.expect(b.error).to.eql('Bad Request'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"toAccountId\":\"{{accountA}}\",\"amount\":10.00}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Same from and to account -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 400 / Bad Request', () => { pm.expect(b.status).to.eql(400); pm.expect(b.error).to.eql('Bad Request'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fromAccountId\":\"{{accountA}}\",\"toAccountId\":\"{{accountA}}\",\"amount\":10.00,\"currency\":\"EUR\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": ["{{baseUrl}}"],
+              "path": ["transfers"]
+            }
+          }
+        },
+        {
+          "name": "Account not found -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 404 / Not Found', () => { pm.expect(b.status).to.eql(404); pm.expect(b.error).to.eql('Not Found'); });",
+                  "pm.test('has a non-empty message', () => pm.expect(b.message).to.be.a('string').and.to.have.length.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/00000000-0000-0000-0000-000000000000/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounts", "00000000-0000-0000-0000-000000000000", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Create account: invalid currency length -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400 (currency must be 3 chars)', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json();",
+                  "pm.test('error body: 400 / Bad Request', () => { pm.expect(b.status).to.eql(400); pm.expect(b.error).to.eql('Bad Request'); });",
+                  "pm.test('message names the currency field', () => pm.expect(String(b.message).toLowerCase()).to.include('currency'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"currency\":\"EU\"}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounts"]
+            }
+          }
+        }
+      ]
     }
   ]
 }
